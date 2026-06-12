@@ -1,0 +1,20 @@
+# env / tooling
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+.DS_Store
+.streamlit/secrets.toml
+
+# repo-local state (AFE tracker SQLite + anything generated at runtime)
+data/state/
+pipeline.sqlite
+apps/afe-copilot/pipeline.sqlite
+apps/afe-copilot/drafts/
+drafts/

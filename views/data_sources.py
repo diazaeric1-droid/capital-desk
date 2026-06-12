@@ -1,0 +1,154 @@
+"""Sources & BYOD — every dataset in the product, its provenance, and the three
+bring-your-own-data contracts (WellDiagnosis JSON, backlog CSV, PDP monthly CSV).
+
+Nothing is stored server-side: uploads are parsed in memory for this session only.
+"""
+from __future__ import annotations
+
+import io
+import json
+
+import streamlit as st
+
+import core
+import product_theme as pt
+import theme
+from src import pdp
+from views import common
+
+OIL, NRI, DISC, DECK = common.deck()
+ss = st.session_state
+
+pt.masthead("capital", "Sources & BYOD",
+            "What's real, what's synthetic, and how to bring your own data.")
+pt.context_bar([
+    ("Deck", DECK),
+    ("Backlog", "BYOD" if ss.get("backlog_csv_text") else "Bundled synthetic"),
+    ("Production", "BYOD" if ss.get("pdp_csv_text") else "Colorado ECMC (real)"),
+])
+
+# ---- provenance -----------------------------------------------------------------
+pt.section("Provenance", "Every number traces to one of these three sources.")
+
+st.markdown("**1 · Colorado ECMC monthly production — used by Screen** "
+            + pt.pill("REAL public data", "ok"), unsafe_allow_html=True)
+theme.data_badge("real", "Colorado ECMC (formerly COGCC) public records — "
+                         "redistributable under the Colorado Open Records Act.")
+st.markdown(
+    "- 28 DJ Basin horizontal wells (Weld County, Niobrara / Codell), ~2,000 "
+    "well-months spanning 2016–2026, 17 operators.\n"
+    "- Per-well, per-month oil / gas / water + producing days — genuine "
+    "public-record production, not synthetic.\n"
+    "- Reproducible: `data/real/colorado/fetch_colorado.py` harvests it from two "
+    "free ECMC endpoints (see the README beside it).")
+
+st.markdown("**2 · Synthetic 45-project capital backlog — used by Program** "
+            + pt.pill("synthetic, defensible ranges", "warn"), unsafe_allow_html=True)
+theme.data_badge("synthetic", "Modeled drilling / DUC / workover backlog — future "
+                              "capital projects aren't public data.")
+st.markdown(
+    "- 45 projects with type-curve, capex, opex, Pc, and rig-day ranges "
+    "order-of-magnitude consistent with public Permian figures.\n"
+    "- Deliberately includes a sub-economic tail (13 of 45 at the $70 deck) and "
+    "lumpy capex, so the optimizer's constraints genuinely bind.\n"
+    "- Committed at `apps/capital-optimizer/data/synthetic/projects.csv`; its "
+    "generator sits beside it.")
+
+st.markdown("**3 · AFE tracker + cost templates — used by Authorize** "
+            + pt.pill("synthetic, demo-seeded", "warn"), unsafe_allow_html=True)
+theme.data_badge("synthetic", "Benchmark cost templates + a demo-seeded pipeline — "
+                              "operator cost and authority data is never public.")
+st.markdown(
+    "- 12 demo AFEs seeded into a product-local SQLite tracker on first run "
+    "(gitignored under `data/state/`; your drafted AFEs persist locally).\n"
+    "- Cost templates are synthetic Permian benchmarks with a programmatic "
+    "contingency line and a tangible / intangible (IDC) split.")
+
+st.divider()
+
+# ---- BYOD ------------------------------------------------------------------------
+pt.section("Bring Your Own Data",
+           "Three contracts. Uploads are validated, parsed in memory, and never "
+           "stored server-side.")
+
+# 1) WellDiagnosis JSON
+st.markdown("**WellDiagnosis JSON → Draft AFE**")
+st.caption("Schema: `well_id, api_number, field, operator, intervention, "
+           "primary_diagnosis, incremental_rate_bopd[, "
+           "expected_uplift_decline_per_yr, requested_by]` — the export the "
+           "Production Engineer Copilot produces.")
+example = (core.EXAMPLES_DIR / "well_diagnosis_001.json").read_text()
+st.download_button("Download example diagnosis (JSON)", data=example,
+                   file_name="well_diagnosis_example.json", mime="application/json")
+diag_up = st.file_uploader("WellDiagnosis JSON", type=["json"], key="data_diag_upload")
+if diag_up is not None:
+    try:
+        payload = json.loads(diag_up.getvalue().decode("utf-8"))
+        diag = core.afe_models.AFEDiagnosis.from_pe_copilot(payload)
+    except (ValueError, json.JSONDecodeError) as exc:
+        st.error(f"Diagnosis rejected: {exc}")
+        st.stop()
+    ss["diag_preset"] = {k: getattr(diag, k) for k in (
+        "well_id", "api_number", "field", "operator", "intervention",
+        "primary_diagnosis", "incremental_rate_bopd",
+        "expected_uplift_decline_per_yr", "requested_by")}
+    st.success(f"Validated {diag.well_id} ({diag.intervention}) — preloaded into "
+               "the Draft AFE page.")
+
+# 2) Backlog CSV
+st.markdown("**Backlog CSV → Program**")
+st.caption("Required columns: "
+           + ", ".join(f"`{c}`" for c in core.capital_projects.REQUIRED_CSV_COLUMNS))
+st.download_button("Download backlog template (CSV)", data=common.BACKLOG_TEMPLATE,
+                   file_name="backlog_template.csv", mime="text/csv")
+bl_up = st.file_uploader("Backlog CSV", type=["csv"], key="data_backlog_upload")
+if bl_up is not None:
+    text = bl_up.getvalue().decode("utf-8", errors="replace")
+    try:
+        projects = common.parse_backlog(text)
+    except ValueError as exc:
+        st.error(f"Could not load backlog: {exc}")
+        st.stop()
+    ss["backlog_csv_text"] = text
+    ss["data_source"] = common.BACKLOG_BYOD_LABEL
+    st.success(f"Loaded {len(projects)} projects — the Program pages now run on "
+               "your backlog.")
+
+# 3) PDP monthly CSV
+st.markdown("**PDP monthly CSV → Screen**")
+st.caption("Required columns: `well_id`, `month` (YYYY-MM), `oil_bbl`; optional "
+           "`days`. One row per well per month.")
+st.download_button("Download PDP template (CSV)", data=pdp.template_csv(),
+                   file_name="pdp_monthly_template.csv", mime="text/csv")
+pdp_up = st.file_uploader("Monthly production CSV", type=["csv"], key="data_pdp_upload")
+if pdp_up is not None:
+    text = pdp_up.getvalue().decode("utf-8", errors="replace")
+    try:
+        tidy = pdp.load_pdp_csv(io.StringIO(text))
+    except ValueError as exc:
+        st.error(f"Could not load production CSV: {exc}")
+        st.stop()
+    ss["pdp_csv_text"] = text
+    ss["data_source"] = common.PDP_BYOD_LABEL
+    st.success(f"Loaded {tidy['well_id'].nunique()} wells / {len(tidy)} well-months "
+               "— select the uploaded source on the PDP Screener page.")
+
+active = []
+if ss.get("backlog_csv_text"):
+    active.append("backlog (BYOD)")
+if ss.get("pdp_csv_text"):
+    active.append("PDP production (BYOD)")
+if ss.get("diag_preset"):
+    active.append("diagnosis (BYOD)")
+if active:
+    if st.button("Clear all uploaded data"):
+        for k in ("backlog_csv_text", "pdp_csv_text", "diag_preset"):
+            ss.pop(k, None)
+        ss["data_source"] = "Bundled demo data"
+        st.rerun()
+    st.caption("Active this session: " + ", ".join(active) + ".")
+
+st.caption("Nothing is stored server-side — uploads live in this session's memory "
+           "and disappear when it ends.")
+
+theme.references(["arps", "prms", "npv", "milp"])

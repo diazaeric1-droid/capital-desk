@@ -1,0 +1,22 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    name: pytest (py3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install -U pip
+          pip install -r requirements.txt pytest
+      - name: Run the product test suite
+        run: pytest -q

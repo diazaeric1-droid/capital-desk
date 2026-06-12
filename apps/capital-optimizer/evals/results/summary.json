@@ -1,0 +1,66 @@
+{
+  "settings": [
+    {
+      "budget_mm": 60.0,
+      "rig_capacity": 170,
+      "milp_risked_npv_mm": 143.66,
+      "greedy_risked_npv_mm": 139.29,
+      "uplift_mm": 4.37,
+      "uplift_pct": 3.14,
+      "optimality_gap_pct": 0.723,
+      "capex_used_mm": 59.88,
+      "rig_used": 167.0,
+      "n_selected": 17,
+      "feasible": true,
+      "beats_greedy": true
+    },
+    {
+      "budget_mm": 60.0,
+      "rig_capacity": 250,
+      "milp_risked_npv_mm": 143.66,
+      "greedy_risked_npv_mm": 141.28,
+      "uplift_mm": 2.38,
+      "uplift_pct": 1.68,
+      "optimality_gap_pct": 1.309,
+      "capex_used_mm": 59.88,
+      "rig_used": 167.0,
+      "n_selected": 17,
+      "feasible": true,
+      "beats_greedy": true
+    },
+    {
+      "budget_mm": 40.0,
+      "rig_capacity": 130,
+      "milp_risked_npv_mm": 111.97,
+      "greedy_risked_npv_mm": 111.9,
+      "uplift_mm": 0.08,
+      "uplift_pct": 0.07,
+      "optimality_gap_pct": 1.669,
+      "capex_used_mm": 39.71,
+      "rig_used": 119.0,
+      "n_selected": 18,
+      "feasible": true,
+      "beats_greedy": true
+    },
+    {
+      "budget_mm": 80.0,
+      "rig_capacity": 200,
+      "milp_risked_npv_mm": 157.91,
+      "greedy_risked_npv_mm": 150.11,
+      "uplift_mm": 7.81,
+      "uplift_pct": 5.2,
+      "optimality_gap_pct": 0.789,
+      "capex_used_mm": 71.46,
+      "rig_used": 200.0,
+      "n_selected": 19,
+      "feasible": true,
+      "beats_greedy": true
+    }
+  ],
+  "dp_check": {
+    "milp_mm": 143.66,
+    "dp_mm": 143.49,
+    "dp_le_milp": true
+  },
+  "n_projects": 45
+}

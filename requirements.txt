@@ -1,0 +1,13 @@
+# Capital Desk — union of the vendored components' runtime requirements
+# (afe-copilot v0.6.2 + capital-optimizer v0.2.3) plus scipy for the new PDP
+# Screener (Arps curve_fit). Python pinned to 3.12 (runtime.txt / CI).
+streamlit>=1.50
+plotly>=5.18.0
+pandas>=2.2.0
+numpy>=1.26.0
+scipy>=1.11.0
+pulp>=2.7.0          # ships CBC — the MILP solver
+python-docx>=1.1.0   # AFE .docx export
+anthropic>=0.40.0    # BYOK LLM narrative only; every number runs keyless
+python-dotenv>=1.0.0 # afe.drafter / capital.narrator import it at module load
+rich>=13.7.0         # afe.drafter console output
