@@ -7,10 +7,38 @@ product chrome: page config, the global price-deck sidebar, and navigation.
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import streamlit as st
 
-import product_theme as pt
-import core
+HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+# --- warm-container module self-heal -----------------------------------------------
+# Streamlit Cloud reuses the Python process across redeploys, so a cached OLD copy of
+# one of OUR modules in sys.modules (or a stale .pyc) can lack symbols added in a newer
+# commit -> AttributeError at run (e.g. views.common.combined_variance_frames). Drop our
+# bytecode and evict every product-owned module so the imports below + the view pages
+# reload from THIS commit's source. Gated once per session (Streamlit re-runs the whole
+# script on every interaction; re-evicting each time would re-run the alias loader for
+# no benefit). A fresh session after a redeploy heals cleanly. Skipped under pytest,
+# where modules are already fresh from source and evicting would break the cross-test
+# module-identity invariants.
+if "pytest" not in sys.modules and not st.session_state.get("_capital_healed"):
+    import shutil as _sh_heal
+    for _pyc in HERE.rglob("__pycache__"):
+        _sh_heal.rmtree(_pyc, ignore_errors=True)
+    _OWN = ("core", "product_theme", "theme", "fleet_registry",
+            "afe", "capital", "views", "src")
+    for _m in list(sys.modules):
+        if any(_m == p or _m.startswith(p + ".") for p in _OWN):
+            sys.modules.pop(_m, None)
+    st.session_state["_capital_healed"] = True
+
+import product_theme as pt  # noqa: E402
+import core  # noqa: E402  (re-loads the afe/capital aliases)
 
 # Page config + theme CSS — FIRST, exactly once. Views never call set_page_config.
 pt.setup_product("capital")

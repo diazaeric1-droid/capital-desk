@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.4] — 2026-06-15
+
+### Fixed
+- **Live AttributeError on Streamlit Cloud** (`views.common.combined_variance_frames`
+  and other pages). Streamlit Cloud reuses the Python process across redeploys, so a
+  cached OLD copy of one of our modules in `sys.modules` lacked symbols added in a newer
+  commit. Added a warm-container self-heal to `app.py` that clears our bytecode and
+  evicts every product-owned module (`core`, `product_theme`, `theme`, `fleet_registry`,
+  the `afe`/`capital` aliases, and all `views.*` / `src.*`) once per session, so the
+  imports and view pages reload from the current commit. Skipped under pytest (where
+  modules are already fresh) to preserve the cross-test module-identity invariants.
+
 ## [0.4.3] — 2026-06-15
 
 Promoted the three substantive re-audit *disclosures* into real code (the rest are
