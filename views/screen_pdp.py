@@ -82,7 +82,7 @@ else:
         "Colorado ECMC (formerly COGCC) public records — DJ Basin horizontals, Weld County.")
 
 SEV = common.severance_frac()      # from the global deck — same tax the AFE charges
-a1, a2, a3 = st.columns(3)
+a1, a2, a3, a4 = st.columns(4)
 loe = a1.slider("LOE ($/bbl)", 4.0, 30.0, 12.0, 0.5,
                 help="Lease operating expense per barrel of oil.")
 gas_price = a2.slider("Gas price ($/mcf)", 0.0, 8.0, 3.00, 0.25,
@@ -92,11 +92,18 @@ econ_limit = a3.slider("Economic limit (bopd)", 1.0, 10.0,
                        pdp.DEFAULT_ECON_LIMIT_BOPD, 0.5,
                        help="Forecast stops at this rate or 360 forecast months, "
                             "whichever comes first.")
+dmin_pct = a4.slider("Terminal decline (%/yr)", 0.0, 15.0,
+                     pdp.DEFAULT_DMIN_ANNUAL * 100.0, 1.0,
+                     help="Modified-hyperbolic Dmin: the forecast switches from "
+                          "hyperbolic to exponential once its decline reaches this, "
+                          "so high-b wells don't over-forecast EUR. 0 = pure Arps.")
+dmin = dmin_pct / 100.0
 st.caption(f"Severance + ad valorem of **{SEV:.1%}** comes from the global deck "
-           "(sidebar) — the same drag the AFE net economics apply.")
+           "(sidebar) — the same drag the AFE net economics apply. Forecast uses a "
+           f"**{dmin_pct:.0f}%/yr terminal decline** (Dmin).")
 
 table, skipped = common.screen_table(csv_text, OIL, loe, NRI, SEV, DISC, econ_limit,
-                                     gas_price=gas_price)
+                                     gas_price=gas_price, dmin=dmin)
 
 if table.empty:
     pt.empty_state("No wells could be fit from this file.",
@@ -269,8 +276,8 @@ if not _bits and source_label == common.PDP_SYNTH_LABEL:
 if _bits:
     st.caption("**" + ss["well_id"] + "** — " + " · ".join(dict.fromkeys(_bits)))
 
-# cached fit — only re-runs the curve fit when the well or economic limit changes
-t_hist, q_hist, fit, fc_rates = common.fit_one_well(csv_text, ss["well_id"], econ_limit)
+# cached fit — only re-runs the curve fit when the well, limit, or Dmin changes
+t_hist, q_hist, fit, fc_rates = common.fit_one_well(csv_text, ss["well_id"], econ_limit, dmin)
 
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=t_hist, y=q_hist, mode="markers", name="history",

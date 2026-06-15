@@ -31,6 +31,7 @@ VIEWS = {
     "views/screen_pdp.py": (4, 1),
     "views/file_regulatory.py": (0, 1),    # regulatory worksheet (Form 7 default)
     "views/data_sources.py": (0, 0),       # provenance + uploaders
+    "views/about_methods.py": (0, 0),      # model card — prose, no metrics/tables
 }
 
 

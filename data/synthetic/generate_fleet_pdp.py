@@ -61,7 +61,9 @@ def _gor_for(n: int, meta) -> float:
 
 
 def _arps_rate(t_years: np.ndarray, qi: float, di: float, b: float) -> np.ndarray:
-    """Hyperbolic Arps rate (bopd) at t years since first production (b>0)."""
+    """Arps rate (bopd) at t years since first production; b≈0 → exponential."""
+    if b < 1e-6:
+        return qi * np.exp(-di * t_years)
     return qi / np.power(1.0 + b * di * t_years, 1.0 / b)
 
 
@@ -73,8 +75,14 @@ def _well_params(n: int, meta) -> tuple[float, float, float]:
     lift_factor = _LIFT_QI.get(meta.lift, 1.0)
     qi = float(rng.uniform(470, 1180) * lat_factor * basin_factor * lift_factor)
     qi = float(np.clip(qi, 180, 1900))
-    di = float(rng.uniform(1.05, 1.75))                   # nominal annual decline (1/yr)
-    b = float(rng.uniform(0.85, 1.25))                    # hyperbolic exponent
+    # ~20% of the fleet declines exponentially (b≈0, gentler initial decline); the
+    # rest are hyperbolic. A real fleet is a mix, not all one model.
+    if rng.random() < 0.20:
+        b = 0.0
+        di = float(rng.uniform(0.55, 1.00))
+    else:
+        b = float(rng.uniform(0.85, 1.25))
+        di = float(rng.uniform(1.05, 1.75))               # nominal annual decline (1/yr)
     return qi, di, b
 
 
@@ -90,16 +98,31 @@ def _well_rows(well_id: str) -> list[dict]:
         first = END_MONTH - 12
     months = pd.period_range(first, END_MONTH, freq="M")
 
+    # Per-well data QUALITY tier → monthly scatter (sigma). Most wells report clean,
+    # some are noisy, a few are messy (low R²) — so the screen's low-confidence guard
+    # has real wells to flag and the fleet isn't suspiciously perfect.
+    qd = rng.random()
+    sigma = (rng.uniform(0.04, 0.09) if qd < 0.62
+             else rng.uniform(0.10, 0.18) if qd < 0.86
+             else rng.uniform(0.24, 0.42))               # messy tail → genuinely low R²
+    # ~18% of wells carry a mid-life disruption (a workover bump or an operational
+    # dip) that no single Arps curve fits — realistic structure that lowers R².
+    bump_mid = int(len(months) * rng.uniform(0.30, 0.65))
+    has_bump = rng.random() < 0.18
+    bump_mag = rng.uniform(1.20, 1.70) if rng.random() < 0.5 else rng.uniform(0.45, 0.75)
+
     rows: list[dict] = []
     for k, per in enumerate(months):
         t_mid_years = (k + 0.5) / 12.0                    # month midpoint, in years
         rate = float(_arps_rate(np.array([t_mid_years]), qi, di, b)[0])
+        if has_bump and bump_mid <= k < bump_mid + 4:     # 4-month workover/dip event
+            rate *= bump_mag
         # uptime: mostly full, with an occasional partial-month downtime event
         if rng.random() < 0.06:
             days = int(rng.integers(8, 24))
         else:
             days = int(rng.integers(28, 32))
-        noise = float(rng.lognormal(mean=0.0, sigma=0.06))  # ~6% monthly scatter
+        noise = float(rng.lognormal(mean=0.0, sigma=sigma))
         oil = rate * days * noise
         if oil < 1:                                       # below a stripper floor → stop reporting
             break

@@ -269,12 +269,14 @@ def resolve_pdp(source_choice: str) -> tuple[str, str, bool]:
 @st.cache_data(show_spinner="Fitting declines + valuing wells…")
 def screen_table(csv_text: str, price: float, loe: float, nri: float,
                  severance: float, discount: float, econ_limit: float,
-                 gas_price: float = 0.0):
+                 gas_price: float = 0.0, dmin: float = None):
     """(per-well table, skipped list) from src.pdp at the given assumptions."""
     from src import pdp
+    if dmin is None:
+        dmin = pdp.DEFAULT_DMIN_ANNUAL
     tidy = pdp.load_pdp_csv(io.StringIO(csv_text))
     return pdp.screen_wells(tidy, price, loe, nri, severance, discount, econ_limit,
-                            gas_price_per_mcf=gas_price)
+                            gas_price_per_mcf=gas_price, dmin_annual=dmin)
 
 
 @st.cache_data(show_spinner=False)
@@ -284,13 +286,15 @@ def pdp_tidy(csv_text: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def fit_one_well(csv_text: str, well_id: str, econ_limit: float):
+def fit_one_well(csv_text: str, well_id: str, econ_limit: float, dmin: float = None):
     """(t_hist, q_hist, fit, forecast_rates) for ONE well — cached so the drill-down
     doesn't re-run the curve fit on every unrelated rerun (only on well/limit change)."""
     from src import pdp
+    if dmin is None:
+        dmin = pdp.DEFAULT_DMIN_ANNUAL
     g = pdp_tidy(csv_text)
     g = g[g["well_id"] == well_id]
     t_hist, q_hist = pdp.well_history(g)
     fit = pdp.fit_well(t_hist, q_hist, well_id=well_id)
-    fc_rates, _ = pdp.forecast_volumes(fit, econ_limit)
+    fc_rates, _ = pdp.forecast_volumes(fit, econ_limit, dmin_annual=dmin)
     return t_hist, q_hist, fit, fc_rates

@@ -69,7 +69,7 @@ def test_backlog_committed_and_realistic(booted):
 
 
 def test_navigation_matches_design(booted):
-    """The page map is the product design: 5 sections, 9 pages, material icons
+    """The page map is the product design: 5 sections, 10 pages, material icons
     (no emoji), and every view file exists."""
     core = booted
     assert list(core.NAV) == ["Authorize", "Program", "Screen", "File", "Data"]
@@ -78,7 +78,7 @@ def test_navigation_matches_design(booted):
     assert titles["Program"] == ["Backlog", "Optimizer", "Frontier & Sensitivity"]
     assert titles["Screen"] == ["PDP Screener"]
     assert titles["File"] == ["Regulatory Filing"]
-    assert titles["Data"] == ["Sources & BYOD"]
+    assert titles["Data"] == ["Sources & BYOD", "Methods & Limitations"]
     allowed_icons = {":material/approval:", ":material/account_balance:",
                      ":material/query_stats:", ":material/description:",
                      ":material/database:"}

@@ -25,15 +25,18 @@ def test_synth_fleet_committed_and_schema_valid(booted):
     assert tidy["well_id"].nunique() == 100
 
 
-def test_synth_fleet_all_wells_fit_with_realistic_spread(booted):
+def test_synth_fleet_fits_with_realistic_heterogeneity(booted):
     core = booted
     from src import pdp
     table, skipped = pdp.screen_wells(_tidy(core), 70.0, 12.0, 0.80, 0.075, 0.10)
-    assert len(table) == 100 and not skipped          # every well fits cleanly
-    assert (table["r_squared"] >= 0.9).all()          # clean synthetic signatures
-    assert table["pv10_usd"].min() > 0                # all economic at the $70 deck
-    # a genuine maturity/value spread — not 100 identical declines
-    assert table["pv10_usd"].max() > 3 * table["pv10_usd"].min()
+    assert len(table) == 100 and not skipped          # every well fits (none dropped)
+    assert table["r_squared"].median() >= 0.85        # clean MAJORITY, not all
+    # heterogeneity: a real fleet is a mix of models, fit qualities, and values —
+    # not 100 identical perfect declines.
+    assert set(table["model"]) == {"exponential", "hyperbolic"}
+    assert (table["r_squared"] < 0.5).sum() >= 1      # ≥1 low-confidence well to flag
+    assert table["pv10_usd"].min() >= 0
+    assert table["pv10_usd"].max() > 3 * max(table["pv10_usd"].median(), 1)
     assert table["n_months"].min() >= pdp.MIN_FIT_POINTS
 
 
@@ -84,6 +87,19 @@ def test_severance_reduces_pv10_monotonically(booted):
     lo, _ = pdp.screen_wells(tidy, 70.0, 12.0, 0.80, 0.00, 0.10)
     hi, _ = pdp.screen_wells(tidy, 70.0, 12.0, 0.80, 0.15, 0.10)
     assert hi["pv10_usd"].sum() < lo["pv10_usd"].sum()
+
+
+def test_terminal_decline_caps_high_b_eur_and_spares_exponential(booted):
+    """Dmin (modified-hyperbolic) trims a fat-tailed high-b hyperbolic well's EUR but
+    leaves an exponential well untouched — the standard terminal-decline guard."""
+    from src import pdp
+    hyp = pdp.WellFit("H", "hyperbolic", 800.0, 1.4, 1.2, 0.0, 0.99, 36, 35.0, 120.0)
+    eur_no = pdp.remaining_eur(hyp, dmin_annual=0.0)
+    eur_dmin = pdp.remaining_eur(hyp, dmin_annual=0.08)
+    assert eur_dmin < eur_no                                  # terminal decline trims EUR
+    exp = pdp.WellFit("E", "exponential", 500.0, 0.5, 0.0, 0.0, 0.99, 24, 23.0, 150.0)
+    assert pdp.remaining_eur(exp, dmin_annual=0.0) == pytest.approx(
+        pdp.remaining_eur(exp, dmin_annual=0.08), rel=1e-9)   # exponential unaffected
 
 
 def test_resolve_pdp_defaults_to_synthetic(booted):

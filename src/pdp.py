@@ -47,6 +47,10 @@ MAX_FORECAST_MONTHS = 360         # 30-year cap, whichever comes first
 MIN_FIT_POINTS = 6                # below this a monthly Arps fit is not credible
 B_MAX = 1.5                       # hyperbolic exponent upper bound
 DI_MIN, DI_MAX = 1e-4, 15.0       # nominal annual decline bounds (1/yr)
+DEFAULT_DMIN_ANNUAL = 0.06        # terminal nominal decline (6%/yr) — switch the
+                                  # hyperbolic forecast to exponential once its
+                                  # instantaneous decline reaches this, so high-b
+                                  # wells don't over-forecast EUR (standard PDP practice)
 
 # BYOD monthly-CSV contract (optional columns: gas_mcf, days)
 REQUIRED_PDP_COLUMNS: list[str] = ["well_id", "month", "oil_bbl"]
@@ -162,6 +166,23 @@ def arps_rate(t_years, qi: float, di: float, b: float):
     return _hyp_rate(t_years, qi, di, b)
 
 
+def arps_rate_terminal(t_years, qi: float, di: float, b: float,
+                       dmin_annual: float = DEFAULT_DMIN_ANNUAL):
+    """Modified-hyperbolic (hyperbolic-to-exponential) Arps rate: decline hyperbolically
+    until the instantaneous nominal decline falls to ``dmin_annual``, then exponentially
+    at ``dmin_annual`` thereafter — the standard terminal-decline guard so a fat-tailed
+    (high-b) hyperbolic fit doesn't over-forecast EUR. Reduces to plain Arps for an
+    exponential fit, when di ≤ dmin, or when dmin ≤ 0."""
+    t = np.asarray(t_years, dtype=float)
+    if b < 1e-9 or dmin_annual <= 0 or di <= dmin_annual:
+        return arps_rate(t, qi, di, b)
+    t_sw = (di / dmin_annual - 1.0) / (b * di)        # time the decline reaches dmin
+    q_sw = qi / np.power(1.0 + b * di * t_sw, 1.0 / b)
+    hyp = qi / np.power(1.0 + b * di * np.minimum(t, t_sw), 1.0 / b)
+    exp_tail = q_sw * np.exp(-dmin_annual * np.maximum(t - t_sw, 0.0))
+    return np.where(t <= t_sw, hyp, exp_tail)
+
+
 @dataclass
 class WellFit:
     well_id: str
@@ -250,19 +271,22 @@ def fit_well(t_months, rates_bopd, well_id: str = "") -> WellFit:
 def forecast_volumes(fit: WellFit,
                      econ_limit_bopd: float = DEFAULT_ECON_LIMIT_BOPD,
                      max_months: int = MAX_FORECAST_MONTHS,
+                     dmin_annual: float = DEFAULT_DMIN_ANNUAL,
                      ) -> tuple[np.ndarray, np.ndarray]:
     """Forward monthly (rates_bopd, volumes_bbl), starting AFTER the last history
     month — never from t=0 (that re-counts produced barrels; see module docstring).
 
     Month k (k = 1..) covers (t_last + k - 1, t_last + k]; its rate is evaluated at
     the month midpoint t_last + k - 0.5 (midpoint rule) and its volume is
-    rate x DAYS_PER_MONTH. The forecast stops at the first month whose rate is
+    rate x DAYS_PER_MONTH. A modified-hyperbolic terminal decline (``dmin_annual``)
+    caps fat hyperbolic tails. The forecast stops at the first month whose rate is
     below ``econ_limit_bopd``, or after ``max_months``, whichever comes first.
     Returns empty arrays when the well is already at/below the economic limit.
     """
     k = np.arange(1, int(max_months) + 1, dtype=float)
     t_mid_years = (fit.t_last_months + k - 0.5) / 12.0
-    rates = arps_rate(t_mid_years, fit.qi_bopd, fit.di_annual, fit.b)
+    rates = arps_rate_terminal(t_mid_years, fit.qi_bopd, fit.di_annual, fit.b,
+                               dmin_annual)
     below = np.nonzero(rates < econ_limit_bopd)[0]
     n = int(below[0]) if len(below) else int(max_months)
     rates = rates[:n]
@@ -271,11 +295,12 @@ def forecast_volumes(fit: WellFit,
 
 def remaining_eur(fit: WellFit,
                   econ_limit_bopd: float = DEFAULT_ECON_LIMIT_BOPD,
-                  max_months: int = MAX_FORECAST_MONTHS) -> float:
+                  max_months: int = MAX_FORECAST_MONTHS,
+                  dmin_annual: float = DEFAULT_DMIN_ANNUAL) -> float:
     """Remaining EUR (bbl) = the integral of the forward forecast to the economic
     limit (midpoint-rule monthly sum; matches the analytic (q_now - q_limit)/D
     exponential integral to <0.5% — pinned by a product test)."""
-    _, vols = forecast_volumes(fit, econ_limit_bopd, max_months)
+    _, vols = forecast_volumes(fit, econ_limit_bopd, max_months, dmin_annual)
     return float(vols.sum())
 
 
@@ -312,6 +337,7 @@ def screen_wells(df: pd.DataFrame, oil_price: float, loe_per_bbl: float = 12.0,
                  econ_limit_bopd: float = DEFAULT_ECON_LIMIT_BOPD,
                  max_months: int = MAX_FORECAST_MONTHS,
                  gas_price_per_mcf: float = 0.0,
+                 dmin_annual: float = DEFAULT_DMIN_ANNUAL,
                  ) -> tuple[pd.DataFrame, list[tuple[str, str]]]:
     """Fit + value every well in a tidy monthly frame (from ``load_pdp_csv``).
 
@@ -332,7 +358,7 @@ def screen_wells(df: pd.DataFrame, oil_price: float, loe_per_bbl: float = 12.0,
         except ValueError as exc:
             skipped.append((str(well_id), str(exc)))
             continue
-        _, vols = forecast_volumes(fit, econ_limit_bopd, max_months)
+        _, vols = forecast_volumes(fit, econ_limit_bopd, max_months, dmin_annual)
         eur = float(vols.sum())
         gor = gas_oil_ratio_mcf_bbl(g)                       # mcf/bbl, 0 when no gas
         gas_vols = vols * gor                                # forecast gas (mcf)

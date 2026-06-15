@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0] — 2026-06-15
+
+Peer-review hardening — pre-empt the three critiques a reservoir-minded PE will raise.
+- **Terminal decline (Dmin) on the PDP forecast.** A modified-hyperbolic switch to
+  exponential once a well's instantaneous decline reaches Dmin (default 6%/yr,
+  adjustable on the Screen), so fat-tailed high-b hyperbolic fits don't over-forecast
+  EUR. Reduces to plain Arps for exponential fits / Dmin ≤ 0. Pinned by a test.
+- **Realistic synthetic fleet.** The 100-well screen fleet is no longer suspiciously
+  perfect: a mix of exponential + hyperbolic declines, per-well noise tiers, and a few
+  mid-life workover/dip disruptions → R² spans ~0.14–1.00 (median ~0.97), so the
+  low-confidence (R² < 0.5) guard actually fires and the demo reads like real data.
+- **Methods & Limitations page** (new, under Data). The honest model card: real vs.
+  synthetic per surface, every economics convention, and the named limitations
+  (oil-only-ish gas, no SWD cost, scheduler overflow, type-typical AFE uplift, gross MC,
+  session-only live actuals, draft-not-certified filings). Pre-empts the gotchas.
+
 ## [0.3.1] — 2026-06-14
 
 Low-value polish sweep (the remaining audit tail), no behavioural changes:

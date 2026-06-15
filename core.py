@@ -246,5 +246,6 @@ NAV: dict[str, list[tuple[str, str, str]]] = {
     ],
     "Data": [
         ("Sources & BYOD", "views/data_sources.py", ":material/database:"),
+        ("Methods & Limitations", "views/about_methods.py", ":material/database:"),
     ],
 }
