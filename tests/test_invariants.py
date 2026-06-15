@@ -71,6 +71,6 @@ def test_pdp_uses_suite_discounting_kernel(booted):
     core = booted
     from src import pdp
     assert pdp.econ_core is core.econ_core
-    net = (70.0 - 12.0) * 0.80 * (1 - 0.075)
+    net = (70.0 * (1 - 0.075) - 12.0) * 0.80      # severance on gross wellhead value
     pv = pdp.pv10([1.0], 70.0, 12.0, 0.80, 0.075, 0.10)
     assert pv == pytest.approx(net / 1.1 ** (1 / 12), rel=1e-12)

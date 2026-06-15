@@ -45,6 +45,24 @@ def severance_frac() -> float:
     return float(st.session_state.get("severance_pct", 7.5)) / 100.0
 
 
+def net_npv_gross_wellhead_severance(net_npv: float, net_cost: float, oil_price: float,
+                                     severance: float, loe_per_bbl: float = 12.0) -> float:
+    """Restate an AFE-component net NPV (computed on a post-LOE revenue base) onto the
+    **gross-wellhead** severance base the PDP screen uses — severance taxes the gross
+    price, LOE is deducted post-tax — so the two engines value a barrel identically.
+
+    ``net_pv = net_npv + net_cost`` is Σ DF·vol·(price − loe)·nri; scaling it by
+    (price·(1−sev) − loe)/(price − loe) converts the per-barrel margin to
+    (price·(1−sev) − loe)·nri, matching pdp.pv10. (loe defaults to the AFE component's
+    fixed $12/bbl opex.)"""
+    net_pv = net_npv + net_cost
+    if oil_price > loe_per_bbl:
+        factor = (oil_price * (1.0 - severance) - loe_per_bbl) / (oil_price - loe_per_bbl)
+    else:
+        factor = 1.0 - severance
+    return net_pv * factor - net_cost
+
+
 def program_deck() -> str:
     """Context-bar deck label for the Program pages. Each backlog project carries
     its OWN NRI (the backlog CSV's `nri` column), so the global sidebar NRI is NOT
@@ -151,12 +169,16 @@ def solve_program(csv_text: str, price: float, discount: float,
 @st.cache_data(show_spinner="Running the program Monte-Carlo…")
 def program_montecarlo(csv_text: str, oil: float, discount: float,
                        funded_ids: tuple, price_sd: float = 12.0,
-                       n_trials: int = 5000, seed: int = 42) -> dict | None:
+                       n_trials: int = 5000, seed: int = 42,
+                       rho: float = 0.0) -> dict | None:
     """Monte-Carlo the FUNDED program's NPV over two real risks the deterministic
     risked-NPV hides: price (Normal(deck, price_sd)) and each project's chance of
     success (Bernoulli(Pc) — a success books its unrisked NPV at the sampled price,
-    a failure loses its capex as a dry hole). Returns P10/P50/P90, mean, P(loss),
-    and the sample array for a histogram.
+    a failure loses its capex as a dry hole). ``rho`` (0–1) correlates the success
+    outcomes via a single-factor Gaussian copula (shared geologic risk): rho=0 is
+    independent, higher rho widens the tail (the realistic case on a single-basin
+    slate). Marginal P(success)=Pc for any rho, so the MEAN is unchanged. Returns
+    P10/P50/P90, mean, P(loss), and the sample array for a histogram.
 
     Per-project NPV(price) is interpolated from a coarse price grid (each grid point
     is one cached ``econ_frame`` solve), so the whole sweep is a few solves + a
@@ -178,7 +200,16 @@ def program_montecarlo(csv_text: str, oil: float, discount: float,
         npv_grid[:, j] = e.reindex(base.index)["npv_usd"].to_numpy(dtype=float)
     rng = np.random.default_rng(seed)
     prices = np.clip(rng.normal(oil, price_sd, n_trials), 1.0, None)
-    succ = rng.random((len(base), n_trials)) < pc[:, None]
+    # success outcomes via a single-factor Gaussian copula: a shared geologic factor
+    # Z plus per-project idiosyncratic noise. P(success)=Φ(thr)=Pc for any rho (mean
+    # unchanged); rho>0 correlates dry holes → a wider, more honest downside tail.
+    from scipy.special import ndtri
+    rho = float(min(max(rho, 0.0), 0.95))
+    thr = ndtri(np.clip(pc, 1e-6, 1 - 1e-6))[:, None]
+    z = rng.standard_normal(n_trials)[None, :]
+    eps = rng.standard_normal((len(base), n_trials))
+    latent = np.sqrt(rho) * z + np.sqrt(1.0 - rho) * eps
+    succ = latent < thr
 
     def _npv_of_price(g_npv):
         """NPV(price) by interpolation, but LINEARLY EXTRAPOLATED past both grid ends
@@ -283,14 +314,16 @@ def resolve_pdp(source_choice: str) -> tuple[str, str, bool]:
 @st.cache_data(show_spinner="Fitting declines + valuing wells…")
 def screen_table(csv_text: str, price: float, loe: float, nri: float,
                  severance: float, discount: float, econ_limit: float,
-                 gas_price: float = 0.0, dmin: float = None):
+                 gas_price: float = 0.0, dmin: float = None,
+                 gas_opex: float = 0.0):
     """(per-well table, skipped list) from src.pdp at the given assumptions."""
     from src import pdp
     if dmin is None:
         dmin = pdp.DEFAULT_DMIN_ANNUAL
     tidy = pdp.load_pdp_csv(io.StringIO(csv_text))
     return pdp.screen_wells(tidy, price, loe, nri, severance, discount, econ_limit,
-                            gas_price_per_mcf=gas_price, dmin_annual=dmin)
+                            gas_price_per_mcf=gas_price, dmin_annual=dmin,
+                            gas_opex_per_mcf=gas_opex)
 
 
 @st.cache_data(show_spinner=False)

@@ -82,17 +82,20 @@ else:
         "Colorado ECMC (formerly COGCC) public records — DJ Basin horizontals, Weld County.")
 
 SEV = common.severance_frac()      # from the global deck — same tax the AFE charges
-a1, a2, a3, a4 = st.columns(4)
+a1, a2, a3, a4, a5 = st.columns(5)
 loe = a1.slider("LOE ($/bbl)", 4.0, 30.0, 12.0, 0.5,
                 help="Lease operating expense per barrel of oil.")
 gas_price = a2.slider("Gas price ($/mcf)", 0.0, 8.0, 3.00, 0.25,
                       help="Realized gas price. Gas rides each well's producing GOR "
                            "off the oil decline; set 0 to value oil only.")
-econ_limit = a3.slider("Economic limit (bopd)", 1.0, 10.0,
+gas_opex = a3.slider("Gas gathering ($/mcf)", 0.0, 2.0, 0.50, 0.05,
+                     help="Gathering / compression / processing cost deducted from "
+                          "gas revenue, so gas PV isn't an un-costed upper bound.")
+econ_limit = a4.slider("Economic limit (bopd)", 1.0, 10.0,
                        pdp.DEFAULT_ECON_LIMIT_BOPD, 0.5,
                        help="Forecast stops at this rate or 360 forecast months, "
                             "whichever comes first.")
-dmin_pct = a4.slider("Terminal decline (%/yr)", 0.0, 15.0,
+dmin_pct = a5.slider("Terminal decline (%/yr)", 0.0, 15.0,
                      pdp.DEFAULT_DMIN_ANNUAL * 100.0, 1.0,
                      help="Modified-hyperbolic Dmin: the forecast switches from "
                           "hyperbolic to exponential once its decline reaches this, "
@@ -104,7 +107,7 @@ st.caption(f"Severance + ad valorem of **{SEV:.1%}** comes from the global deck 
            f"**{dmin_pct:.0f}%/yr terminal decline** (Dmin).")
 
 table, skipped = common.screen_table(csv_text, OIL, loe, NRI, SEV, DISC, econ_limit,
-                                     gas_price=gas_price, dmin=dmin)
+                                     gas_price=gas_price, dmin=dmin, gas_opex=gas_opex)
 
 if table.empty:
     pt.empty_state("No wells could be fit from this file.",

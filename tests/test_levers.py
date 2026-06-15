@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 
+import pytest
+
 from src import regulatory
 from views import common
 
@@ -49,6 +51,45 @@ def test_program_montecarlo_brackets_the_deterministic_risked_npv(booted):
     assert mc["p10"] < mc["p50"] < mc["p90"]
     # the risked NPV IS the expected value — the MC mean must land near it
     assert abs(mc["mean"] - prog.risked_npv) < 0.1 * abs(prog.risked_npv)
+
+
+def test_gas_gathering_cost_reduces_pv10(booted):
+    """A positive gas gathering/processing cost lowers total PV10 (gas isn't an
+    un-costed upper bound), and oil-only PV is untouched."""
+    core = booted
+    from src import pdp
+    import io as _io
+    tidy = pdp.load_pdp_csv(_io.StringIO(core.SYNTH_FLEET_CSV.read_text()))
+    free, _ = pdp.screen_wells(tidy, 70.0, 12.0, 0.80, 0.075, 0.10, gas_price_per_mcf=3.0)
+    costed, _ = pdp.screen_wells(tidy, 70.0, 12.0, 0.80, 0.075, 0.10,
+                                 gas_price_per_mcf=3.0, gas_opex_per_mcf=0.5)
+    assert costed["pv10_usd"].sum() < free["pv10_usd"].sum()
+    assert costed["pv10_oil_usd"].sum() == pytest.approx(free["pv10_oil_usd"].sum())
+
+
+def test_severance_on_gross_wellhead_and_afe_pdp_reconcile(booted):
+    """Severance is on the gross wellhead base; the AFE restatement reproduces the
+    PDP per-barrel net exactly, so the two engines value a barrel identically."""
+    from src import pdp
+    pv = pdp.pv10([1.0], 70.0, 12.0, 0.80, 0.075, 0.10)
+    pdp_bbl_net = (70.0 * (1 - 0.075) - 12.0) * 0.80           # gross-wellhead base
+    assert pv == pytest.approx(pdp_bbl_net / 1.1 ** (1 / 12), rel=1e-12)
+    afe_bbl = common.net_npv_gross_wellhead_severance((70.0 - 12.0) * 0.80, 0.0, 70.0, 0.075)
+    assert afe_bbl == pytest.approx(pdp_bbl_net, rel=1e-12)
+
+
+def test_montecarlo_correlation_widens_tail_holds_mean(booted):
+    """Geologic correlation ρ widens the program downside (lower P10) without moving
+    the mean — the success marginals stay at Pc."""
+    core = booted
+    txt = core.backlog_csv_text()
+    econ = core.capital_economics.economics_frame(core.load_backlog(), 70.0, 0.10)
+    prog, _ = core.optimize_program(econ, 60e6, 170.0)
+    ids = tuple(sorted(prog.selected_ids))
+    indep = common.program_montecarlo(txt, 70.0, 0.10, ids, price_sd=12.0, rho=0.0)
+    corr = common.program_montecarlo(txt, 70.0, 0.10, ids, price_sd=12.0, rho=0.6)
+    assert corr["p10"] < indep["p10"]                          # wider downside
+    assert corr["mean"] == pytest.approx(indep["mean"], rel=0.03)  # mean preserved
 
 
 def test_program_montecarlo_does_not_clamp_below_grid(booted):

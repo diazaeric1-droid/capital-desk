@@ -20,6 +20,7 @@ import streamlit as st
 import core
 import product_theme as pt
 import theme
+from views import common
 
 ss = st.session_state
 OIL = float(ss.get("oil_price", 70.0))
@@ -169,11 +170,9 @@ SEV = float(ss.get("severance_pct", 7.5)) / 100.0     # deck severance (shared w
 
 
 def _net_npv_after_severance(net_npv: float, net_cost: float) -> float:
-    """Apply the deck severance to an AFE net NPV. The component's net NPV is
-    net_pv − net_cost (no production tax); severance scales revenue only, so
-    net_pv = net_npv + net_cost, taxed net_pv·(1−sev), cost untaxed."""
-    net_pv = net_npv + net_cost
-    return net_pv * (1.0 - SEV) - net_cost
+    """Apply the deck severance to an AFE net NPV on the **gross-wellhead** base (the
+    statutory base the PDP screen uses), so the two engines value a barrel identically."""
+    return common.net_npv_gross_wellhead_severance(net_npv, net_cost, OIL, SEV)
 
 
 pt.section("Net Economics",

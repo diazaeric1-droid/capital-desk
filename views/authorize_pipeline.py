@@ -64,8 +64,8 @@ def _net_npv(row) -> float | None:
     e = core.draft_economics(float(row["total_cost_usd"]), uplift,
                              realized_price_per_bbl=OIL,
                              net_revenue_interest=NRI, discount_rate=DISC)
-    net_pv = e.net_npv_10pct_usd + e.net_cost_to_operator_usd
-    return float(net_pv * (1.0 - SEV) - e.net_cost_to_operator_usd)
+    return float(common.net_npv_gross_wellhead_severance(
+        e.net_npv_10pct_usd, e.net_cost_to_operator_usd, OIL, SEV))
 
 
 token = ss.get("_afe_cache_token", 0)

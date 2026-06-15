@@ -64,8 +64,9 @@ def test_pv10_matches_independent_brute_force(pdp, exp_fit):
     price, loe, nri, sev, disc = 70.0, 12.0, 0.80, 0.075, 0.10
     _, vols = pdp.forecast_volumes(exp_fit, econ_limit_bopd=LIMIT)
     pv = pdp.pv10(vols, price, loe, nri, sev, disc)
+    # severance on the GROSS wellhead base: tax the price, deduct LOE post-tax
     brute = sum(
-        v * (price - loe) * nri * (1.0 - sev) / (1.0 + disc) ** ((m + 1) / 12.0)
+        v * (price * (1.0 - sev) - loe) * nri / (1.0 + disc) ** ((m + 1) / 12.0)
         for m, v in enumerate(vols))
     assert pv == pytest.approx(brute, rel=1e-6)
     assert pv > 0

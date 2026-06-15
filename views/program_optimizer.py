@@ -200,11 +200,18 @@ pt.section("Program Risk — Monte-Carlo",
            "The funded program's NPV distribution over price AND each project's "
            "chance of success — the P-curve a committee signs against, not a single "
            "risked point.")
-price_sd = st.slider("Oil-price uncertainty (± $ std-dev)", 4.0, 25.0, 12.0, 1.0,
-                     help="Std-dev of realized oil price around the deck; each "
-                          "project also succeeds with probability Pc (else it loses "
-                          "its capex as a dry hole).")
-mc = common.program_montecarlo(csv_text, OIL, DISC, tuple(sorted(sel)), price_sd=price_sd)
+mc1, mc2 = st.columns(2)
+price_sd = mc1.slider("Oil-price uncertainty (± $ std-dev)", 4.0, 25.0, 12.0, 1.0,
+                      help="Std-dev of realized oil price around the deck; each "
+                           "project also succeeds with probability Pc (else it loses "
+                           "its capex as a dry hole).")
+rho = mc2.slider("Geologic correlation (ρ)", 0.0, 0.9, 0.3, 0.05,
+                 help="How correlated dry-hole risk is across the slate (shared "
+                      "basin/geology). 0 = independent (optimistic tail); higher ρ "
+                      "widens the downside — the realistic case for a single-basin "
+                      "program. The mean is unchanged; only the spread (P10) moves.")
+mc = common.program_montecarlo(csv_text, OIL, DISC, tuple(sorted(sel)),
+                               price_sd=price_sd, rho=rho)
 if mc is None:
     pt.empty_state("Nothing funded to simulate under the current constraints.")
 else:
@@ -224,10 +231,9 @@ else:
     hist.update_layout(xaxis_title="program NPV ($MM)", yaxis_title="trials")
     st.plotly_chart(theme.style_fig(hist, height=300, legend=False), width="stretch")
     st.caption(f"Deterministic risked NPV (${program.risked_npv/1e6:,.1f}MM) sits near "
-               "the mean; the spread is what price and dry-hole risk do to it. Dry-hole "
-               "draws are independent here, so on a single-basin slate the true P10 is "
-               "somewhat **wider** than shown (correlated geology) — read this P10 as a "
-               "screening floor, not a hard underwrite.")
+               "the mean (correlation widens the spread, not the mean); the P10 is what "
+               f"price + correlated dry-hole risk (ρ={rho:.2f}) do to the downside. Raise "
+               "ρ for a more conservative, single-basin underwrite.")
     theme.source_note(
         "5,000 trials: price ~ Normal(deck, ±sd); each funded project books its "
         "unrisked NPV at the sampled price on success (prob Pc) or −capex on a dry "

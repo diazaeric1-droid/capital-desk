@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.3] — 2026-06-15
+
+Promoted the three substantive re-audit *disclosures* into real code (the rest are
+documented engineering choices).
+- **Severance on the gross wellhead base.** Both the PDP screen and the AFE net
+  economics now tax the gross price and deduct LOE/gathering post-tax (the statutory
+  base), instead of taxing the post-LOE margin. The two engines still value a barrel
+  identically (pinned by a test); ~1–2% more tax than before.
+- **Gas operating cost.** A gathering/compression/processing input ($/mcf, default
+  $0.50) is deducted from gas revenue, so gas PV is no longer an un-costed upper bound.
+- **Geologic correlation (ρ) in the program Monte-Carlo.** Dry-hole outcomes are now
+  correlated via a single-factor Gaussian copula with an adjustable ρ (default 0.3) —
+  ρ=0 is independent (optimistic), higher ρ widens the downside for a single-basin
+  slate. The mean is unchanged by ρ; only the P10/spread moves.
+
+Left as documented choices (not bugs): the AFE 5-yr vs Optimizer 15-yr horizons
+(short intervention life vs new-well life), and the oil-rate economic limit
+(conservative). 48 tests pass.
+
 ## [0.4.2] — 2026-06-15
 
 Closed the remaining re-audit tail — the Regulatory Filing worksheet field-mapping

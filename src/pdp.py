@@ -319,23 +319,25 @@ def remaining_eur(fit: WellFit,
 def pv10(volumes_bbl, oil_price: float, loe_per_bbl: float = 12.0,
          nri: float = 0.80, severance_frac: float = 0.075,
          discount: float = 0.10, *, gas_volumes_mcf=None,
-         gas_price_per_mcf: float = 0.0) -> float:
+         gas_price_per_mcf: float = 0.0, gas_opex_per_mcf: float = 0.0) -> float:
     """PV of the forward net-revenue stream under the suite discounting convention.
 
-    monthly oil net revenue = oil_bbl x (oil_price - loe_per_bbl) x nri x (1 - severance)
-    plus, when ``gas_volumes_mcf`` and a gas price are given,
-    monthly gas net revenue = gas_mcf x gas_price x nri x (1 - severance)
+    Severance is levied on **gross wellhead value** (statutory base), with LOE /
+    gathering deducted post-tax — not on the post-LOE margin:
+      monthly oil net = oil_bbl x [oil_price x (1 - sev) - loe_per_bbl] x nri
+      monthly gas net = gas_mcf x [gas_price x (1 - sev) - gas_opex_per_mcf] x nri
     discounted end-of-month, effective-annual (econ_core.discounted_pv) — month 1
-    is the first full month after the last history month. Gas defaults OFF so the
-    oil-only signature is unchanged.
+    is the first full month after the last history month. Gas defaults OFF (price 0)
+    so the oil-only path is unchanged in structure.
     """
     vols = np.asarray(volumes_bbl, dtype=float)
     if vols.size == 0:
         return 0.0
-    net = vols * (oil_price - loe_per_bbl) * nri * (1.0 - severance_frac)
+    net = vols * (oil_price * (1.0 - severance_frac) - loe_per_bbl) * nri
     if gas_volumes_mcf is not None and gas_price_per_mcf > 0:
         gas = np.asarray(gas_volumes_mcf, dtype=float)
-        net = net + gas * gas_price_per_mcf * nri * (1.0 - severance_frac)
+        net = net + gas * (gas_price_per_mcf * (1.0 - severance_frac)
+                           - gas_opex_per_mcf) * nri
     return float(econ_core.discounted_pv(net, discount))
 
 
@@ -350,6 +352,7 @@ def screen_wells(df: pd.DataFrame, oil_price: float, loe_per_bbl: float = 12.0,
                  max_months: int = MAX_FORECAST_MONTHS,
                  gas_price_per_mcf: float = 0.0,
                  dmin_annual: float = DEFAULT_DMIN_ANNUAL,
+                 gas_opex_per_mcf: float = 0.0,
                  ) -> tuple[pd.DataFrame, list[tuple[str, str]]]:
     """Fit + value every well in a tidy monthly frame (from ``load_pdp_csv``).
 
@@ -377,7 +380,8 @@ def screen_wells(df: pd.DataFrame, oil_price: float, loe_per_bbl: float = 12.0,
         gas_eur = float(gas_vols.sum())
         pv_oil = pv10(vols, oil_price, loe_per_bbl, nri, severance_frac, discount)
         pv_total = pv10(vols, oil_price, loe_per_bbl, nri, severance_frac, discount,
-                        gas_volumes_mcf=gas_vols, gas_price_per_mcf=gas_price_per_mcf)
+                        gas_volumes_mcf=gas_vols, gas_price_per_mcf=gas_price_per_mcf,
+                        gas_opex_per_mcf=gas_opex_per_mcf)
         cur_oil = fit.current_rate_bopd
         # current gas rate from the well's ACTUAL last producing month (not
         # cur_oil x lifetime GOR), so the displayed "Current" matches the input data
