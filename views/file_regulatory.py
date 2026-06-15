@@ -75,9 +75,15 @@ def _render(draft: regulatory.FilingDraft) -> None:
 
 # ---------------------------------------------------------------------------
 if form_choice.startswith("CO"):
+    # Colorado form → default to the REAL Colorado wells; the synthetic fleet is a
+    # Texas/Permian demo identity (TX API-42, TX counties), so flag it if chosen.
     src_choice = st.radio("Production source",
-                          [common.PDP_SYNTH_LABEL, common.PDP_REAL_LABEL],
+                          [common.PDP_REAL_LABEL, common.PDP_SYNTH_LABEL],
                           horizontal=True)
+    if src_choice == common.PDP_SYNTH_LABEL:
+        st.warning("The synthetic fleet is a **Texas/Permian** demo identity (TX API, "
+                   "TX counties) — it does NOT correspond to a Colorado ECMC well. "
+                   "Use the Colorado source for a real Form 7; this is mapping practice only.")
     csv_text, source_label, _ = common.resolve_pdp(src_choice)
     tidy = common.pdp_tidy(csv_text)
     wells = sorted(tidy["well_id"].unique())
@@ -102,7 +108,9 @@ if form_choice.startswith("CO"):
         formation=_col("formation", meta.formation if meta else ""),
         oil_bbl=row.get("oil_bbl"),
         gas_mcf=row.get("gas_mcf", 0.0),
-        water_bbl=row.get("water_bbl", 0.0),
+        # None (not 0) when the source carries no water column, so it renders as
+        # "not in source" rather than a misleading reported zero.
+        water_bbl=(row.get("water_bbl") if "water_bbl" in g.columns else None),
         days=row.get("days"))
     _render(draft)
 
@@ -118,15 +126,14 @@ else:
     r = pa[pa["afe_number"] == afe_no].iloc[0]
     well = str(r["well_id"])
     meta = fleet_registry.get(well) if well.startswith("well_") else None
-    last = str(r.get("last_updated") or _dt.date.today())
     draft = regulatory.tx_w3_plugging(
         afe_number=afe_no, well_id=well,
-        api=(meta.api14 if meta else "—"),
-        operator="Demo Operator LLC",
-        field_name=(meta.area if meta else "—"),
+        api=(meta.api14 if meta else "— (enter API)"),
+        operator="— (enter operator)",          # the tracker doesn't carry an operator
+        field_name=(meta.area if meta else "— (enter field/lease)"),
         estimated_cost_usd=float(r["total_cost_usd"]),
-        plug_date=last,
-        total_depth_ft=(meta.lateral_length_ft if meta else None))
+        plug_date="— (enter proposed plug date)",  # NOT the AFE's last-status timestamp
+        total_depth_ft=None)                     # TD is not lateral length — must be entered
     _render(draft)
 
 theme.references(["npv"])

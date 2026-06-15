@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.2] — 2026-06-15
+
+Closed the remaining re-audit tail — the Regulatory Filing worksheet field-mapping
+warts (all bounded by the "draft, not a certified filing" disclaimer) + two low items.
+- **W-3 Plugging Record:** stopped sourcing Total Depth from the well's lateral length
+  (wrong quantity), the proposed plug date from the AFE's last-status timestamp, and the
+  operator from a hardcoded "Demo Operator LLC" — all now render "— (enter …)" prompts,
+  and the note no longer claims operator/API/TD carry from the AFE (they aren't tracked).
+- **CO Form 7:** defaults to the REAL Colorado source; selecting the synthetic fleet now
+  warns that it's a Texas/Permian demo identity that doesn't correspond to a Colorado well.
+  Water renders "— (not in source)" instead of a misleading reported 0 when absent.
+- **Colorado refrac backlog:** the incremental IP now anchors on a robust trailing-6-month
+  mean rate, not a single noisy last month.
+- **Disclosure:** Dmin only binds on wells whose Di exceeds it (Methods page + slider help).
+
 ## [0.4.1] — 2026-06-15
 
 New-surface re-audit (a second adversarial pass over everything added since v0.1.0,

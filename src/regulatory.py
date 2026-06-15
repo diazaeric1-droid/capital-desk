@@ -59,7 +59,8 @@ def co_form7_production(*, month: str, operator: str, well_name: str, api: str,
         ("Formation / pool", formation or "—"),
         ("Oil produced (bbl)", _fmt_num(oil_bbl, "bbl")),
         ("Gas produced (mcf)", _fmt_num(gas_mcf, "mcf")),
-        ("Water produced (bbl)", _fmt_num(water_bbl, "bbl")),
+        ("Water produced (bbl)",
+         "— (not in source)" if water_bbl is None else _fmt_num(water_bbl, "bbl")),
         ("Days produced", _fmt_num(days)),
     ]
     try:
@@ -108,7 +109,9 @@ def tx_w3_plugging(*, afe_number: str, well_id: str, api: str, operator: str,
         jurisdiction="Texas RRC",
         fields=rows,
         notes=[
-            "Cost and well identity carry from the approved P&A AFE.",
+            "Estimated cost and the well number carry from the P&A AFE; operator, "
+            "API, field, total depth, and the proposed plug date are NOT held by the "
+            "AFE tracker — enter the actual values before filing.",
             "Plug depths, cement volumes, and cementer details must come from the "
             "actual plugging program; Statewide Rule 14 governs plug placement.",
             "File W-3 within 30 days of plugging; a W-3A notice precedes the work.",

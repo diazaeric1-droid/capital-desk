@@ -79,7 +79,9 @@ def colorado_workover_csv() -> str:
         except ValueError:
             continue
         rng = np.random.default_rng(4200 + idx)
-        cur = max(fit.current_rate_bopd, 5.0)
+        # anchor on a ROBUST current rate — the trailing-6-month mean, not the single
+        # last observed month (which can be a noisy outlier)
+        cur = max(float(np.mean(q[-6:])) if len(q) else fit.current_rate_bopd, 5.0)
         qi_inc = float(cur * rng.uniform(2.0, 3.5))          # refrac bump over current rate
         di_inc = float(rng.uniform(1.1, 1.6))                # refracs decline fast
         b_inc = float(rng.uniform(0.8, 1.1))

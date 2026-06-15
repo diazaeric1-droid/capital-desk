@@ -96,7 +96,8 @@ dmin_pct = a4.slider("Terminal decline (%/yr)", 0.0, 15.0,
                      pdp.DEFAULT_DMIN_ANNUAL * 100.0, 1.0,
                      help="Modified-hyperbolic Dmin: the forecast switches from "
                           "hyperbolic to exponential once its decline reaches this, "
-                          "so high-b wells don't over-forecast EUR. 0 = pure Arps.")
+                          "so high-b wells don't over-forecast EUR. Only binds on wells "
+                          "whose initial decline exceeds it. 0 = pure Arps.")
 dmin = dmin_pct / 100.0
 st.caption(f"Severance + ad valorem of **{SEV:.1%}** comes from the global deck "
            "(sidebar) — the same drag the AFE net economics apply. Forecast uses a "
