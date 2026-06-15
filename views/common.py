@@ -169,7 +169,7 @@ def program_montecarlo(csv_text: str, oil: float, discount: float,
         return None
     capex = base["capex_usd"].to_numpy(dtype=float)
     pc = base["pc"].to_numpy(dtype=float)
-    grid = list(range(40, 101, 5))
+    grid = np.array(range(40, 101, 5), dtype=float)
     npv_grid = np.zeros((len(base), len(grid)))
     for j, px in enumerate(grid):
         e = econ_frame(csv_text, float(px), discount).set_index("project_id")
@@ -177,9 +177,21 @@ def program_montecarlo(csv_text: str, oil: float, discount: float,
     rng = np.random.default_rng(seed)
     prices = np.clip(rng.normal(oil, price_sd, n_trials), 1.0, None)
     succ = rng.random((len(base), n_trials)) < pc[:, None]
+
+    def _npv_of_price(g_npv):
+        """NPV(price) by interpolation, but LINEARLY EXTRAPOLATED past both grid ends
+        (NPV is exactly linear in price) — a flat clamp below $40 would make the P10 /
+        P(loss) optimistic exactly at the stressed decks a committee stress-tests."""
+        out = np.interp(prices, grid, g_npv)
+        lo_slope = (g_npv[1] - g_npv[0]) / (grid[1] - grid[0])
+        hi_slope = (g_npv[-1] - g_npv[-2]) / (grid[-1] - grid[-2])
+        out = np.where(prices < grid[0], g_npv[0] + lo_slope * (prices - grid[0]), out)
+        out = np.where(prices > grid[-1], g_npv[-1] + hi_slope * (prices - grid[-1]), out)
+        return out
+
     totals = np.zeros(n_trials)
     for i in range(len(base)):
-        npv_i = np.interp(prices, grid, npv_grid[i])          # NPV(price) for project i
+        npv_i = _npv_of_price(npv_grid[i])                    # NPV(price) for project i
         totals += np.where(succ[i], npv_i, -capex[i])         # success → NPV, else dry hole
     return {
         "p10": float(np.percentile(totals, 10)),

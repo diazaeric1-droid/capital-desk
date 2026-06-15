@@ -129,8 +129,8 @@ pt.kpi_row([
 ])
 
 # Low-confidence-fit guard: a noisy well with a weak decline fit can still post a
-# large PV10. Flag it so it is never silently trusted (the synthetic fleet fits
-# cleanly; real / BYOD data is where this bites).
+# large PV10. Flag it so it is never silently trusted — the synthetic fleet has a
+# deliberate messy tail, and real / BYOD data is where this bites hardest.
 lowfit = table[table["r_squared"] < 0.5]
 if len(lowfit):
     tot = table["pv10_usd"].sum()

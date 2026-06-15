@@ -150,7 +150,18 @@ cur = str(row["status"])
 lc1, lc2 = st.columns([1, 2])
 if cur == "executed":
     lc1.success("Executed")
-    lc2.caption("Already executed — see its variance on the Variance page.")
+    live = adv in ss.get("live_actuals", {})
+    lc2.caption("Executed this session — its actuals are on the Variance page."
+                if live else "Already executed (pre-seeded). The Variance page shows a "
+                "separate set of closed-out actuals; execute an in-flight AFE here to "
+                "add it there.")
+elif cur not in order:
+    # terminal / non-advanceable status the lifecycle doesn't model (e.g. 'rejected',
+    # 'cancelled') — STATUS_ORDER only covers the draft→executed path, so guard the
+    # index lookup instead of letting it raise on the render path.
+    lc1.warning(cur.replace("_", " ").title())
+    lc2.caption(f"This AFE is **{cur.replace('_', ' ')}** — not on the active "
+                "review→execution path, so there's nothing to advance.")
 else:
     nxt = order[min(order.index(cur) + 1, len(order) - 1)]
     if lc1.button(f"Advance → {nxt.replace('_', ' ')}"):

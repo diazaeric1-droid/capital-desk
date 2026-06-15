@@ -44,11 +44,17 @@ st.markdown(
     "- **Discounting is effective-annual:** DF(m) = (1+r)^(m/12). A 10% input means "
     "10% per YEAR — not the 10.47% monthly compounding implies (pinned by a test).\n"
     "- **Severance + ad valorem** is a single deck input applied to BOTH the AFE net "
-    "economics and the PDP screen, so the two value barrels identically.\n"
+    "economics and the PDP screen, so the two value barrels identically. It is levied "
+    "on the **post-LOE margin** (price − LOE), not gross wellhead value — a slight "
+    "(~1–2% of net) under-statement of the production tax, consistent across both engines.\n"
     "- **NRI** governs revenue share; on the **Program** pages each project carries "
     "its OWN NRI from the backlog (the sidebar NRI drives Authorize + Screen).\n"
     "- **LOE** is a flat $/bbl on the screen; the AFE net economics deduct a $12/bbl "
-    "operating cost (disclosed on the page).")
+    "operating cost (disclosed on the page).\n"
+    "- **Horizon differs by engine** (a known simplification): AFE intervention "
+    "economics run a 5-year horizon; the Capital Optimizer's project type curves run "
+    "15 years. Immaterial at typical declines, but a steep AFE uplift-decline truncates "
+    "more under the 5-year cut.")
 
 pt.section("PDP Screener — method", "Per-well decline → forward forecast → PV10.")
 st.markdown(
@@ -60,12 +66,19 @@ st.markdown(
     "- **Terminal decline (Dmin):** a modified-hyperbolic switch to exponential once "
     "the instantaneous decline reaches Dmin (default 6%/yr, adjustable), so fat-tailed "
     "high-b wells don't over-forecast EUR.\n"
-    "- **Gas:** valued by riding each well's producing GOR off the oil decline at a gas "
-    "price; oil and gas PV10 are broken out and current rate is shown in BOE/d.")
+    "- **Gas:** valued by riding the well's **trailing-12-month GOR** off the oil "
+    "decline at a gas price (so a gassing-up/down well's forward gas reflects its "
+    "current GOR, not a lifetime average); oil and gas PV10 are broken out and current "
+    "rate is shown in BOE/d.")
 pt.section("PDP Screener — limitations", "")
 st.markdown(
     "- Gas is GOR-ridden — **no separate gas decline, NGL/shrink/Btu, or basis "
     "differential**. NGL-rich or dry-gas wells need a fuller gas model.\n"
+    "- **Gas carries no operating cost** (no gathering/compression/processing), so "
+    "realized gas PV is an **upper bound** on midstream-burdened wells — set the gas "
+    "price to 0 for an oil-only screen.\n"
+    "- The **economic limit is tested on the OIL rate only**, so any remaining gas "
+    "beyond the oil cutoff is dropped — conservative (under-values gas-weighted wells).\n"
     "- **No water / SWD disposal cost** in the screen LOE (the suite's Deferment/PE "
     "apps model SWD drag; this quick-look does not).\n"
     "- PV10 is the **producing base only** — no PUDs, behind-pipe, G&A, or plugging "
@@ -83,7 +96,15 @@ st.markdown(
     "cap** (flagged in-app when it happens).\n"
     "- **Program Monte-Carlo** samples price (Normal) and each project's chance of "
     "success (Bernoulli → dry hole loses capex); per-project NPV(price) is interpolated "
-    "from a coarse grid. It is NOT a full reservoir/correlated-risk simulation.")
+    "and **linearly extrapolated** past the grid (NPV is linear in price), so stressed "
+    "low/high decks aren't clamped. Dry-hole draws are **independent** across projects — "
+    "real single-basin geology is correlated, so the modeled P10 is **optimistic** (a "
+    "correlated-risk tail would be wider). It is a screening P-curve, not a full "
+    "reservoir/correlated-risk simulation.\n"
+    "- **Colorado refrac backlog** keeps the real wells' identities + decline shapes but "
+    "the workover economics are modeled assumptions: incremental IP ≈ 2.0–3.5× current "
+    "rate, capex ~$0.9–2.4MM, Pc ~0.62–0.85 — the load-bearing numbers a reviewer should "
+    "interrogate.")
 
 pt.section("AFE & Variance — limitations", "")
 st.markdown(

@@ -224,8 +224,10 @@ else:
     hist.update_layout(xaxis_title="program NPV ($MM)", yaxis_title="trials")
     st.plotly_chart(theme.style_fig(hist, height=300, legend=False), width="stretch")
     st.caption(f"Deterministic risked NPV (${program.risked_npv/1e6:,.1f}MM) sits near "
-               "the mean; the spread is what price and dry-hole risk do to it — the "
-               "P10 is the number a risk-aware committee actually underwrites.")
+               "the mean; the spread is what price and dry-hole risk do to it. Dry-hole "
+               "draws are independent here, so on a single-basin slate the true P10 is "
+               "somewhat **wider** than shown (correlated geology) — read this P10 as a "
+               "screening floor, not a hard underwrite.")
     theme.source_note(
         "5,000 trials: price ~ Normal(deck, ±sd); each funded project books its "
         "unrisked NPV at the sampled price on success (prob Pc) or −capex on a dry "

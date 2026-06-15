@@ -49,3 +49,16 @@ def test_program_montecarlo_brackets_the_deterministic_risked_npv(booted):
     assert mc["p10"] < mc["p50"] < mc["p90"]
     # the risked NPV IS the expected value — the MC mean must land near it
     assert abs(mc["mean"] - prog.risked_npv) < 0.1 * abs(prog.risked_npv)
+
+
+def test_program_montecarlo_does_not_clamp_below_grid(booted):
+    """Sub-$40 price draws must be linearly extrapolated, not flat-clamped to NPV($40):
+    a deck well below the $40 grid floor must value materially lower than one at $45."""
+    core = booted
+    txt = core.backlog_csv_text()
+    econ = core.capital_economics.economics_frame(core.load_backlog(), 70.0, 0.10)
+    prog, _ = core.optimize_program(econ, 60e6, 170.0)
+    ids = tuple(sorted(prog.selected_ids))
+    low = common.program_montecarlo(txt, 30.0, 0.10, ids, price_sd=2.0)   # ~all draws < $40
+    mid = common.program_montecarlo(txt, 45.0, 0.10, ids, price_sd=2.0)
+    assert low["mean"] < mid["mean"] - 1.0   # not clamped to the same $40 floor value

@@ -102,6 +102,30 @@ def test_terminal_decline_caps_high_b_eur_and_spares_exponential(booted):
         pdp.remaining_eur(exp, dmin_annual=0.08), rel=1e-9)   # exponential unaffected
 
 
+def test_terminal_decline_is_monotonic_across_di(booted):
+    """EUR must be non-increasing as Dmin rises — including past the well's own Di
+    (the previously non-monotone regime). A higher decline floor can only cut EUR."""
+    from src import pdp
+    fit = pdp.WellFit("M", "hyperbolic", 700.0, 0.5, 1.0, 0.0, 0.99, 30, 29.0, 110.0)
+    eurs = [pdp.remaining_eur(fit, dmin_annual=d) for d in (0.05, 0.20, 0.40, 0.55, 0.80)]
+    assert all(a >= b - 1e-6 for a, b in zip(eurs, eurs[1:])), eurs   # monotone ↓
+
+
+def test_current_gas_rate_matches_last_month(booted):
+    """The displayed current gas rate comes from the well's ACTUAL last producing
+    month, not cur_oil × lifetime GOR (which contradicted the input on trending wells)."""
+    core = booted
+    from src import pdp
+    tidy = _tidy(core)
+    table, _ = pdp.screen_wells(tidy, 70.0, 12.0, 0.80, 0.075, 0.10, gas_price_per_mcf=3.0)
+    w = table["well_id"].iloc[0]
+    g = tidy[tidy["well_id"] == w]
+    last = g.iloc[-1]
+    expected = float(last["gas_mcf"]) / float(last["days"])
+    got = float(table.loc[table["well_id"] == w, "current_gas_mcfd"].iloc[0])
+    assert got == pytest.approx(expected, abs=0.1)   # table rounds mcfd to 1 decimal
+
+
 def test_resolve_pdp_defaults_to_synthetic(booted):
     """The default/synthetic label resolves to the synthetic fleet; the real label
     resolves to Colorado — the source toggle is honest about provenance."""

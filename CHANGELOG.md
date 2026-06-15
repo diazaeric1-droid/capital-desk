@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.4.1] — 2026-06-15
+
+New-surface re-audit (a second adversarial pass over everything added since v0.1.0,
+since the original audit predated it). 25 findings; the three real correctness defects
+are fixed, the rest are disclosed.
+
+### Fixed
+- **Pipeline Board crash** when a non-advanceable AFE (e.g. the seeded `rejected`
+  AFE-2026-0052) was picked in the lifecycle dropdown — `STATUS_ORDER.index()` raised
+  on the render path (the try/except only wrapped the click). Now guarded with a
+  terminal-state notice; also corrected the "executed → see Variance" caption that
+  over-promised for pre-seeded executed AFEs.
+- **Program Monte-Carlo** flat-clamped sub-$40 price draws to the $40 NPV, making the
+  P10 / P(loss) optimistic at stressed decks. Now **linearly extrapolates** past both
+  grid ends (NPV is exactly linear in price).
+- **PDP gas** rode a single lifetime-average GOR; the displayed "current" gas rate
+  could contradict the well's own last month ~5×. Forward GOR now uses a **trailing
+  12-month** window and the current gas rate is read from the **actual last producing
+  month**.
+- **Dmin** terminal decline made monotone for the (unreachable-on-shipped-data) regime
+  where Dmin ≥ a well's fitted Di. Form 7 GOR shows "—" for a zero-oil month.
+
+### Disclosed (Methods & Limitations + captions)
+- Gas carries no gathering/processing cost (gas PV is an upper bound); severance is on
+  the post-LOE base; AFE 5-yr vs Optimizer 15-yr horizons; the economic limit is on oil
+  only; the Colorado refrac uplift/capex/Pc ranges; and the program-MC P10 is optimistic
+  under correlated single-basin geology (now read as a screening floor).
+
 ## [0.4.0] — 2026-06-15
 
 Peer-review hardening — pre-empt the three critiques a reservoir-minded PE will raise.

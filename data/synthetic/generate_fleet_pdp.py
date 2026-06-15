@@ -17,8 +17,9 @@ are deep on the curve near the economic limit), so the screen produces a genuine
 PV10 spread instead of 100 identical declines.
 
 Output: ``fleet_pdp.csv`` with the PDP monthly contract columns
-(``well_id, month, oil_bbl, days``) plus ``well_name`` for display. Deterministic:
-reruns are byte-identical (seeded per well; no wall-clock).
+(``well_id, month, oil_bbl, gas_mcf, days``) plus ``well_name`` for display. Gas
+rides each well's GOR off the oil decline. Deterministic: reruns are byte-identical
+(seeded per well; no wall-clock).
 
 Honest framing: SYNTHETIC. Future capital deals and most private production are
 not public data; the real, public-record option on the same page is the Colorado

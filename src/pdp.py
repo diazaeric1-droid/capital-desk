@@ -115,14 +115,20 @@ def template_csv() -> str:
             "WELL-001,2023-03,8300,12400,31\n")
 
 
-def gas_oil_ratio_mcf_bbl(group: pd.DataFrame) -> float:
-    """A well's producing GOR (mcf gas per bbl oil) from its history — used to ride
-    the gas forecast off the oil decline (solution-gas behaviour). 0 when there is
-    no gas column or no oil."""
+GOR_TRAILING_MONTHS = 12          # window for the forward GOR (representative of NOW)
+
+
+def gas_oil_ratio_mcf_bbl(group: pd.DataFrame,
+                          trailing_months: int = GOR_TRAILING_MONTHS) -> float:
+    """A well's producing GOR (mcf gas per bbl oil) used to ride the gas forecast off
+    the oil decline (solution-gas behaviour). Uses the TRAILING window (default last
+    12 months), not cradle-to-grave, so a gassing-up / gassing-down well's forward gas
+    reflects its CURRENT GOR rather than a lifetime average. 0 with no gas / no oil."""
     if "gas_mcf" not in group.columns:
         return 0.0
-    oil = float(group["oil_bbl"].sum())
-    gas = float(pd.to_numeric(group["gas_mcf"], errors="coerce").fillna(0.0).sum())
+    g = group.tail(trailing_months) if trailing_months and trailing_months > 0 else group
+    oil = float(g["oil_bbl"].sum())
+    gas = float(pd.to_numeric(g["gas_mcf"], errors="coerce").fillna(0.0).sum())
     return (gas / oil) if oil > 0 else 0.0
 
 
@@ -174,8 +180,14 @@ def arps_rate_terminal(t_years, qi: float, di: float, b: float,
     (high-b) hyperbolic fit doesn't over-forecast EUR. Reduces to plain Arps for an
     exponential fit, when di ≤ dmin, or when dmin ≤ 0."""
     t = np.asarray(t_years, dtype=float)
-    if b < 1e-9 or dmin_annual <= 0 or di <= dmin_annual:
-        return arps_rate(t, qi, di, b)
+    if b < 1e-9 or dmin_annual <= 0:
+        return arps_rate(t, qi, di, b)                # exponential fit / no terminal floor
+    if di <= dmin_annual:
+        # a hyperbolic well whose INITIAL decline is already ≤ the floor declines
+        # below the floor everywhere, so the terminal floor binds from t=0 → pure
+        # exponential at dmin. (Returning plain hyperbolic here would make EUR jump
+        # UP as dmin rises past di — a non-monotone knob; this keeps it monotone.)
+        return _exp_rate(t, qi, dmin_annual)
     t_sw = (di / dmin_annual - 1.0) / (b * di)        # time the decline reaches dmin
     q_sw = qi / np.power(1.0 + b * di * t_sw, 1.0 / b)
     hyp = qi / np.power(1.0 + b * di * np.minimum(t, t_sw), 1.0 / b)
@@ -360,14 +372,21 @@ def screen_wells(df: pd.DataFrame, oil_price: float, loe_per_bbl: float = 12.0,
             continue
         _, vols = forecast_volumes(fit, econ_limit_bopd, max_months, dmin_annual)
         eur = float(vols.sum())
-        gor = gas_oil_ratio_mcf_bbl(g)                       # mcf/bbl, 0 when no gas
+        gor = gas_oil_ratio_mcf_bbl(g)                       # trailing GOR (mcf/bbl)
         gas_vols = vols * gor                                # forecast gas (mcf)
         gas_eur = float(gas_vols.sum())
         pv_oil = pv10(vols, oil_price, loe_per_bbl, nri, severance_frac, discount)
         pv_total = pv10(vols, oil_price, loe_per_bbl, nri, severance_frac, discount,
                         gas_volumes_mcf=gas_vols, gas_price_per_mcf=gas_price_per_mcf)
         cur_oil = fit.current_rate_bopd
-        cur_gas = cur_oil * gor                               # current gas rate (mcfd)
+        # current gas rate from the well's ACTUAL last producing month (not
+        # cur_oil x lifetime GOR), so the displayed "Current" matches the input data
+        cur_gas = cur_oil * gor
+        if "gas_mcf" in g.columns and len(g):
+            last = g.iloc[-1]
+            ld = (float(last["days"]) if "days" in g.columns and pd.notna(last.get("days"))
+                  and float(last["days"]) > 0 else DAYS_PER_MONTH)
+            cur_gas = float(pd.to_numeric(last["gas_mcf"], errors="coerce") or 0.0) / ld
         rows.append({
             "well_id": str(well_id),
             "model": fit.model,

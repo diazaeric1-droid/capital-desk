@@ -63,8 +63,12 @@ def co_form7_production(*, month: str, operator: str, well_name: str, api: str,
         ("Days produced", _fmt_num(days)),
     ]
     try:
-        gor = (float(gas_mcf) * 1000.0 / float(oil_bbl)) if float(oil_bbl) > 0 else 0.0
-        rows.append(("Gas-oil ratio (scf/bbl)", _fmt_num(gor, "scf/bbl")))
+        # GOR is undefined when no oil was produced — show "—", not a misleading 0.
+        if float(oil_bbl) > 0:
+            gor = float(gas_mcf) * 1000.0 / float(oil_bbl)
+            rows.append(("Gas-oil ratio (scf/bbl)", _fmt_num(gor, "scf/bbl")))
+        else:
+            rows.append(("Gas-oil ratio (scf/bbl)", "— (no oil this month)"))
     except (TypeError, ValueError):
         pass
     return FilingDraft(
