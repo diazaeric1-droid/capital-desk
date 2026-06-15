@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.1] — 2026-06-14
+
+Low-value polish sweep (the remaining audit tail), no behavioural changes:
+- **Honesty/wording:** the greedy baseline is now described as a "rank-by-efficiency
+  first-fit" (not "rank-and-cut"); the Frontier docstring no longer cites a "$55 /
+  next $10MM" that the charts don't sample; the vendored variance engine docstring
+  drops its unimplemented "vendor / rig" breakdown promise; the Variance page renames
+  "Line-Level Detail" → "AFE Line Detail", spells out the 100%-unbudgeted case, and
+  drops an inapt NPV citation.
+- **Dead code/state:** removed the write-only `data_source` session state (6 writes +
+  the default); removed a dead `econ_frame` solve inside the cached frontier.
+- **Surfaced/added:** component engine versions (AFE v0.6.2 · Capital v0.2.3) now show
+  on the Data page; the Backlog inventory adds an **F&D ($/bbl)** column benchmarked to
+  ~$8–15/bbl Permian; the Data page's context-bar labels use the canonical source names.
+- **Perf:** the PDP drill-down fit is cached (no re-fit on unrelated reruns).
+- **CI:** opt the runner's JS actions into Node 24 (Node 20 is being retired).
+
 ## [0.3.0] — 2026-06-14
 
 Lever build-out: deeper economics + a fourth module + program risk + a live loop.

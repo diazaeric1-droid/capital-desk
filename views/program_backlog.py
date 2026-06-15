@@ -51,12 +51,10 @@ with st.expander("Bring your own backlog (CSV)"):
             st.error(f"Could not load backlog: {exc}")
             st.stop()
         st.session_state["backlog_csv_text"] = text
-        st.session_state["data_source"] = common.BACKLOG_BYOD_LABEL
         st.success(f"Loaded {up.name} — the Program pages now run on your backlog.")
         st.rerun()
     if is_byod and st.button("Revert to the demo backlog"):
         st.session_state.pop("backlog_csv_text", None)
-        st.session_state["data_source"] = "Bundled demo data"
         st.rerun()
 
 theme.data_badge(
@@ -114,6 +112,10 @@ pt.section("Project Inventory", "Per-project risked economics at the deck — ra
 table = econ[["project_id", "name", "label", "area", "capex_usd", "risked_npv_usd",
               "npv_usd", "irr_pct", "payout_months", "eur_bbl", "capital_efficiency",
               "pc", "rig_days"]].copy()
+# F&D ($/bbl) — capex per EUR barrel, the capital-efficiency benchmark a PE checks
+# against typical Permian finding-&-development cost (~$8–15/bbl).
+table["fd_per_bbl"] = table.apply(
+    lambda r: r["capex_usd"] / r["eur_bbl"] if r["eur_bbl"] > 0 else float("nan"), axis=1)
 table = table.sort_values("risked_npv_usd", ascending=False).reset_index(drop=True)
 table.insert(0, "Rank", range(1, len(table) + 1))
 # IRR clamps to 500 (the solver's "still positive at 500%" sentinel) and payout is
@@ -126,6 +128,7 @@ table = table.rename(columns={
     "project_id": "ID", "name": "Project", "label": "Type", "area": "Area",
     "capex_usd": "Capex $", "risked_npv_usd": "Risked NPV $", "npv_usd": "NPV $",
     "irr_pct": "IRR %", "payout_months": "Payout (mo)", "eur_bbl": "EUR (bbl)",
+    "fd_per_bbl": "F&D ($/bbl)",
     "capital_efficiency": "Cap. Eff. (x)", "pc": "Pc", "rig_days": "Rig-Days"})
 st.dataframe(
     table, width="stretch", hide_index=True,
@@ -134,6 +137,8 @@ st.dataframe(
         "Risked NPV $": st.column_config.NumberColumn(format="$%,.0f"),
         "NPV $": st.column_config.NumberColumn(format="$%,.0f"),
         "EUR (bbl)": st.column_config.NumberColumn(format="%,.0f"),
+        "F&D ($/bbl)": st.column_config.NumberColumn(format="$%.2f",
+            help="Capex per EUR barrel — vs ~$8–15/bbl typical Permian F&D."),
         "Cap. Eff. (x)": st.column_config.NumberColumn(format="%.2f"),
         "Pc": st.column_config.NumberColumn(format="%.2f"),
     })

@@ -1,8 +1,10 @@
-"""Frontier & Sensitivity — what the next $10MM is worth, and what $55 oil does.
+"""Frontier & Sensitivity — what the next budget increment is worth, and how the
+program holds up at lower (and higher) oil prices.
 
-Efficient frontier (optimal risked NPV re-solved at each budget level) plus a
-price-deck sensitivity, both honoring the GLOBAL deck's discount rate — the two
-charts a VP always asks for before signing the budget ask.
+Efficient frontier (optimal risked NPV re-solved across budget levels) plus a
+price-deck sensitivity sampled at $50/$60/$70/$80 and the current deck price, both
+honoring the GLOBAL deck's discount rate — the two charts a VP always asks for
+before signing the budget ask.
 """
 from __future__ import annotations
 
@@ -45,13 +47,12 @@ st.caption("These constraints are shared with the Optimizer page — changing th
 def _frontier(csv_text: str, price: float, discount: float, rig: float,
               max_budget: float, steps: int = 12):
     rows = []
-    econ = common.econ_frame(csv_text, price, discount)
     for i in range(1, steps + 1):
         b = max_budget * i / steps
         prog, _greedy = common.solve_program_uncached(csv_text, price, discount, b, rig)
         rows.append({"budget": b, "risked_npv": prog.risked_npv,
                      "n_selected": prog.n_selected})
-    return rows, len(econ)
+    return rows
 
 
 @st.cache_data(show_spinner="Re-optimizing across the price strip…")
@@ -69,7 +70,7 @@ def _price_strip(csv_text: str, discount: float, budget: float, rig: float,
 l, r = st.columns(2)
 with l:
     pt.section("Efficient Frontier", "Optimal risked NPV at each budget level.")
-    front, _n = _frontier(csv_text, OIL, DISC, rig_cap, float(total_capex))
+    front = _frontier(csv_text, OIL, DISC, rig_cap, float(total_capex))
     ff = go.Figure(go.Scatter(
         x=[f["budget"] / 1e6 for f in front],
         y=[f["risked_npv"] / 1e6 for f in front],

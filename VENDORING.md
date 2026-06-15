@@ -77,6 +77,8 @@ Intentional, documented edits so the integrated product is internally consistent
   Variance page sit in one product, where the old numbers collided with the live
   tracker's in-flight AFE-2026-xxxx records (same number, different scope/$). The
   new numbers keep the closed-out actuals distinct from the in-flight pipeline.
+  The module docstring was also corrected to drop the unimplemented "vendor, rig"
+  breakdown promise (only the per-category breakdown is computed).
 
 New product-local synthetic data (NOT mirrored from any component):
 `data/synthetic/fleet_pdp.csv` (+ `generate_fleet_pdp.py`) — the suite-shared

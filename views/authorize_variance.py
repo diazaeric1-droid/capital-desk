@@ -46,8 +46,9 @@ pt.kpi_row([
 ])
 
 if vs.worst_offender_category:
-    pct_txt = (f" ({vs.worst_offender_pct:+.0f}%)"
-               if vs.worst_offender_pct is not None else " (unbudgeted)")
+    pct_txt = (f" ({vs.worst_offender_pct:+.0f}% over its AFE line)"
+               if vs.worst_offender_pct is not None
+               else " (100% unbudgeted — no AFE line existed)")
     st.markdown(
         f"**Worst-offender category:** {vs.worst_offender_category} — "
         f"**${vs.worst_offender_overrun_usd:,.0f}** overrun{pct_txt}. "
@@ -88,7 +89,7 @@ theme.source_note(
     "Variance ($) = actual − AFE budget per category; a 100%-unbudgeted category "
     "(no AFE line existed) shows its full actual as overrun — never dropped.")
 
-pt.section("Line-Level Detail", "Pick a category to drill into the AFE lines behind it.")
+pt.section("AFE Line Detail", "Pick a category to drill into the AFE lines behind it.")
 cats = ["All categories"] + list(by_cat["category"])
 pick = st.selectbox("Drill into category", cats, key="variance_cat",
                     help="Choose a single cost category to see every AFE line in it; "
@@ -127,5 +128,3 @@ theme.source_note(
     "100%-unbudgeted Fishing line and a rig overrun that trips the supplemental-"
     "AFE policy. The worst offender ranks by absolute $ so unbudgeted lines are "
     "never silently dropped.")
-
-theme.references(["npv"])

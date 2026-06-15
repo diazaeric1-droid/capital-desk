@@ -21,11 +21,18 @@ ss = st.session_state
 
 pt.masthead("capital", "Sources & BYOD",
             "What's real, what's synthetic, and how to bring your own data.")
+_backlog_lbl = (common.BACKLOG_BYOD_LABEL if ss.get("backlog_csv_text")
+                else common.BACKLOG_COLO_LABEL if ss.get("backlog_source") == "colorado"
+                else common.BACKLOG_DEMO_LABEL)
+_prod_lbl = common.PDP_BYOD_LABEL if ss.get("pdp_csv_text") else common.PDP_SYNTH_LABEL
 pt.context_bar([
     ("Deck", DECK),
-    ("Backlog", "BYOD" if ss.get("backlog_csv_text") else "Bundled synthetic"),
-    ("Production", "BYOD" if ss.get("pdp_csv_text") else "Synthetic fleet (default)"),
+    ("Backlog", _backlog_lbl),
+    ("Production", _prod_lbl),
 ])
+st.caption(f"Component engines: AFE Copilot **v{core.AFE_VERSION}** · Capital "
+           f"Optimizer **v{core.CAPITAL_VERSION}** · PDP Screener + Regulatory "
+           "(product-native). The product version is in the page header.")
 
 # ---- provenance -----------------------------------------------------------------
 pt.section("Provenance", "Every number traces to one of these four sources.")
@@ -125,7 +132,6 @@ if bl_up is not None:
         st.error(f"Could not load backlog: {exc}")
         st.stop()
     ss["backlog_csv_text"] = text
-    ss["data_source"] = common.BACKLOG_BYOD_LABEL
     st.success(f"Loaded {len(projects)} projects — the Program pages now run on "
                "your backlog.")
 
@@ -144,7 +150,6 @@ if pdp_up is not None:
         st.error(f"Could not load production CSV: {exc}")
         st.stop()
     ss["pdp_csv_text"] = text
-    ss["data_source"] = common.PDP_BYOD_LABEL
     st.success(f"Loaded {tidy['well_id'].nunique()} wells / {len(tidy)} well-months "
                "— select the uploaded source on the PDP Screener page.")
 
@@ -159,7 +164,6 @@ if active:
     if st.button("Clear all uploaded data"):
         for k in ("backlog_csv_text", "pdp_csv_text", "diag_preset"):
             ss.pop(k, None)
-        ss["data_source"] = "Bundled demo data"
         st.rerun()
     st.caption("Active this session: " + ", ".join(active) + ".")
 

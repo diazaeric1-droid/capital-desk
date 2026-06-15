@@ -62,7 +62,6 @@ with st.expander("Bring your own monthly production (CSV)"):
             st.error(f"Could not load production CSV: {exc}")
             st.stop()
         ss["pdp_csv_text"] = text
-        ss["data_source"] = common.PDP_BYOD_LABEL
         st.success(f"Loaded {up.name} — select '{common.PDP_BYOD_LABEL}' above.")
 
 csv_text, source_label, is_byod = common.resolve_pdp(source_choice)
@@ -270,9 +269,8 @@ if not _bits and source_label == common.PDP_SYNTH_LABEL:
 if _bits:
     st.caption("**" + ss["well_id"] + "** — " + " · ".join(dict.fromkeys(_bits)))
 
-t_hist, q_hist = pdp.well_history(g)
-fit = pdp.fit_well(t_hist, q_hist, well_id=ss["well_id"])
-fc_rates, _fc_vols = pdp.forecast_volumes(fit, econ_limit)
+# cached fit — only re-runs the curve fit when the well or economic limit changes
+t_hist, q_hist, fit, fc_rates = common.fit_one_well(csv_text, ss["well_id"], econ_limit)
 
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=t_hist, y=q_hist, mode="markers", name="history",

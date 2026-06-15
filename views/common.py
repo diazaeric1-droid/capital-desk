@@ -281,3 +281,16 @@ def screen_table(csv_text: str, price: float, loe: float, nri: float,
 def pdp_tidy(csv_text: str) -> pd.DataFrame:
     from src import pdp
     return pdp.load_pdp_csv(io.StringIO(csv_text))
+
+
+@st.cache_data(show_spinner=False)
+def fit_one_well(csv_text: str, well_id: str, econ_limit: float):
+    """(t_hist, q_hist, fit, forecast_rates) for ONE well — cached so the drill-down
+    doesn't re-run the curve fit on every unrelated rerun (only on well/limit change)."""
+    from src import pdp
+    g = pdp_tidy(csv_text)
+    g = g[g["well_id"] == well_id]
+    t_hist, q_hist = pdp.well_history(g)
+    fit = pdp.fit_well(t_hist, q_hist, well_id=well_id)
+    fc_rates, _ = pdp.forecast_volumes(fit, econ_limit)
+    return t_hist, q_hist, fit, fc_rates

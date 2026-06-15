@@ -25,7 +25,6 @@ ss.setdefault("nri", 0.80)            # net revenue interest (revenue share)
 ss.setdefault("discount", 0.10)       # effective-annual discount rate
 ss.setdefault("severance_pct", 7.5)   # severance + ad valorem (%), AFE + PDP alike
 ss.setdefault("well_id", "")          # PDP screener drill-down selection
-ss.setdefault("data_source", "Bundled demo data")
 ss.setdefault("anthropic_key", "")    # BYOK, session-only — never stored
 
 # ---- global sidebar: the price deck every module prices against ----------------

@@ -1,5 +1,5 @@
-"""Variance analysis: actual cost vs. AFE, with breakdown by category, vendor, rig,
-and AFE-supplement flagging against a policy overrun threshold."""
+"""Variance analysis: actual cost vs. AFE, with a per-category breakdown and
+AFE-supplement flagging against a policy overrun threshold."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

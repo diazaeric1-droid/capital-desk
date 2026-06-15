@@ -60,8 +60,8 @@ pt.kpi_row([
     {"label": "Capital Efficiency", "value": f"{program.weighted_cap_eff:.2f}x",
      "help": "Capex-weighted risked NPV per $ of capital across the funded slate."},
     {"label": "Optimizer vs. Greedy", "value": f"+${uplift/1e6:,.1f}MM",
-     "delta": f"+{uplift_pct:.1f}%", "help": "MILP over rank-by-efficiency-and-cut "
-                                             "at the same budget + rig limit."},
+     "delta": f"+{uplift_pct:.1f}%", "help": "MILP over a rank-by-efficiency "
+                                             "first-fit at the same budget + rig limit."},
 ])
 
 gap_txt = (f" The solution is within **{program.optimality_gap_pct:.2f}%** of the "
@@ -70,7 +70,7 @@ gap_txt = (f" The solution is within **{program.optimality_gap_pct:.2f}%** of th
            if program.optimality_gap_pct is not None else "")
 st.success(
     f"The MILP captures **${uplift/1e6:,.1f}MM (+{uplift_pct:.1f}%)** more risked NPV "
-    f"than rank-and-cut at the same constraints.{gap_txt}")
+    f"than a rank-by-efficiency first-fit at the same constraints.{gap_txt}")
 st.caption(
     "Honest framing: on this backlog the optimizer's edge over a competent greedy "
     "ranking is ~3–5% ($4.4–7.8MM) and only when the rig limit binds — the value of "

@@ -9,6 +9,9 @@ jobs:
   test:
     name: pytest (py3.12)
     runs-on: ubuntu-latest
+    # Opt the JS-based actions into Node 24 (Node 20 is being retired off the runner).
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
