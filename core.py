@@ -105,9 +105,18 @@ TRACKER_DB = STATE_DIR / "tracker.sqlite"
 
 # Real public production data for the PDP Screener (mirrored from
 # production-engineer-copilot — see VENDORING.md): Colorado ECMC DJ Basin,
-# 28 horizontal wells, per-well monthly oil/gas/water, 2016-2026.
+# 28 horizontal wells, per-well monthly oil/gas/water, 2017-2026.
 COLORADO_DIR = HERE / "data" / "real" / "colorado"
 COLORADO_CSV = COLORADO_DIR / "production.csv"
+
+# The suite's shared 100-well synthetic fleet, rendered as MONTHLY oil for the
+# PDP Screener (same well IDENTITIES — well_001..well_100 from fleet_registry —
+# that Operations Center + Engineering Workbench use as daily SCADA). Committed
+# (deterministic seed) so cold-start is instant; the generator sits beside it and
+# regenerates it on the rare chance it is wiped.
+SYNTH_FLEET_DIR = HERE / "data" / "synthetic"
+SYNTH_FLEET_CSV = SYNTH_FLEET_DIR / "fleet_pdp.csv"
+SYNTH_FLEET_GENERATOR = SYNTH_FLEET_DIR / "generate_fleet_pdp.py"
 
 EXAMPLES_DIR = APP_DIRS["afe"] / "examples"
 
@@ -137,9 +146,20 @@ def ensure_tracker(log=print) -> Path:
     return TRACKER_DB
 
 
+def ensure_synth_fleet(log=print) -> Path:
+    """The 100-well monthly synthetic fleet ships committed (deterministic seed);
+    if it is ever missing, regenerate it with its own generator — the same
+    first-run safety net as the backlog."""
+    if not SYNTH_FLEET_CSV.exists():
+        log("Generating the synthetic 100-well monthly fleet (PDP screener)…")
+        runpy.run_path(str(SYNTH_FLEET_GENERATOR), run_name="__main__")
+    return SYNTH_FLEET_CSV
+
+
 def bootstrap(log=print) -> None:
     ensure_backlog(log)
     ensure_tracker(log)
+    ensure_synth_fleet(log)
 
 
 # ---- authorize (AFE) helpers ---------------------------------------------------
@@ -220,6 +240,9 @@ NAV: dict[str, list[tuple[str, str, str]]] = {
     ],
     "Screen": [
         ("PDP Screener", "views/screen_pdp.py", ":material/query_stats:"),
+    ],
+    "File": [
+        ("Regulatory Filing", "views/file_regulatory.py", ":material/description:"),
     ],
     "Data": [
         ("Sources & BYOD", "views/data_sources.py", ":material/database:"),

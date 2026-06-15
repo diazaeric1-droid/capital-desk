@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -26,20 +27,26 @@ pt.masthead("capital", "PDP Screener",
             "Decline-fit, remaining EUR, and PV10 per well — the deal quick-look.")
 
 # ---- source + assumptions -----------------------------------------------------
-src_options = [common.PDP_REAL_LABEL, common.PDP_BYOD_LABEL]
+# Default = the suite-shared 100-well synthetic fleet (same well identities as
+# Operations Center + Engineering Workbench), with the REAL Colorado ECMC slice and
+# a BYOD upload as the other two options.
+src_options = [common.PDP_SYNTH_LABEL, common.PDP_REAL_LABEL, common.PDP_BYOD_LABEL]
 c_src, c_ask = st.columns([2, 1])
 with c_src:
     source_choice = st.radio("Production source", src_options, horizontal=True,
-                             help="The Colorado slice is genuine public-record "
-                                  "ECMC data. Upload your own monthly CSV on this "
-                                  "page or the Data page.")
+                             help="The default is the suite's shared 100-well "
+                                  "synthetic Permian fleet (same wells the other "
+                                  "operator products use). The Colorado slice is "
+                                  "genuine public-record ECMC data. Or upload your "
+                                  "own monthly CSV here or on the Data page.")
 with c_ask:
-    asking_mm = st.number_input("Asking price ($MM, 0 = none)", 0.0, 5000.0, 25.0, 1.0,
-                                help="The seller's number — compared against PV10.")
+    asking_mm = st.number_input("Asking price ($MM, 0 = none)", 0.0, 5000.0, 0.0, 5.0,
+                                help="The seller's number — compared against PV10. "
+                                     "0 = no asking price (screen value only).")
 
 if source_choice == common.PDP_BYOD_LABEL and not ss.get("pdp_csv_text"):
     st.info("No uploaded CSV yet — add one below (or on the Data page). "
-            "Showing the real Colorado slice meanwhile.")
+            "Showing the synthetic fleet meanwhile.")
 with st.expander("Bring your own monthly production (CSV)"):
     st.caption("Required columns: `well_id`, `month` (YYYY-MM), `oil_bbl`; "
                "optional `days` (producing days — improves the rate basis). "
@@ -56,29 +63,41 @@ with st.expander("Bring your own monthly production (CSV)"):
             st.stop()
         ss["pdp_csv_text"] = text
         ss["data_source"] = common.PDP_BYOD_LABEL
-        st.success(f"Loaded {up.name} — select 'Uploaded monthly CSV' above.")
+        st.success(f"Loaded {up.name} — select '{common.PDP_BYOD_LABEL}' above.")
 
 csv_text, source_label, is_byod = common.resolve_pdp(source_choice)
 pt.context_bar([("Deck", DECK), ("Data", source_label),
                 ("Convention", "Forecast forward from last history month")])
-theme.data_badge(
-    "real",
-    "User-uploaded monthly production — parsed in memory only." if is_byod else
-    "Colorado ECMC (formerly COGCC) public records — DJ Basin horizontals, Weld County.")
+if source_label == common.PDP_SYNTH_LABEL:
+    theme.data_badge(
+        "synthetic",
+        "Suite-shared 100-well synthetic Permian fleet (same well identities as "
+        "Operations Center + Engineering Workbench), rendered as monthly oil — "
+        "future deals / private production aren't public data. Switch to the "
+        "Colorado ECMC slice above for genuine public-record production.")
+elif is_byod:
+    theme.data_badge("real", "User-uploaded monthly production — parsed in memory only.")
+else:
+    theme.data_badge(
+        "real",
+        "Colorado ECMC (formerly COGCC) public records — DJ Basin horizontals, Weld County.")
 
+SEV = common.severance_frac()      # from the global deck — same tax the AFE charges
 a1, a2, a3 = st.columns(3)
 loe = a1.slider("LOE ($/bbl)", 4.0, 30.0, 12.0, 0.5,
-                help="Lease operating expense per barrel.")
-severance_pct = a2.slider("Severance + ad valorem (%)", 0.0, 15.0, 7.5, 0.5,
-                          help="Production-tax drag on net revenue (~7.5% is a "
-                               "typical Colorado all-in).")
+                help="Lease operating expense per barrel of oil.")
+gas_price = a2.slider("Gas price ($/mcf)", 0.0, 8.0, 3.00, 0.25,
+                      help="Realized gas price. Gas rides each well's producing GOR "
+                           "off the oil decline; set 0 to value oil only.")
 econ_limit = a3.slider("Economic limit (bopd)", 1.0, 10.0,
                        pdp.DEFAULT_ECON_LIMIT_BOPD, 0.5,
                        help="Forecast stops at this rate or 360 forecast months, "
                             "whichever comes first.")
+st.caption(f"Severance + ad valorem of **{SEV:.1%}** comes from the global deck "
+           "(sidebar) — the same drag the AFE net economics apply.")
 
-table, skipped = common.screen_table(csv_text, OIL, loe, NRI,
-                                     severance_pct / 100.0, DISC, econ_limit)
+table, skipped = common.screen_table(csv_text, OIL, loe, NRI, SEV, DISC, econ_limit,
+                                     gas_price=gas_price)
 
 if table.empty:
     pt.empty_state("No wells could be fit from this file.",
@@ -86,15 +105,35 @@ if table.empty:
     st.stop()
 
 roll = pdp.deal_rollup(table, asking_mm * 1e6 if asking_mm > 0 else None)
+has_gas = roll.get("total_pv10_gas_usd", 0.0) > 0
+gas_share = (roll["total_pv10_gas_usd"] / roll["total_pv10_usd"] * 100.0
+             if has_gas and roll["total_pv10_usd"] else 0.0)
 
 pt.kpi_row([
-    {"label": "Deal PV10", "value": f"${roll['total_pv10_usd']/1e6:,.1f}MM",
-     "help": "Sum of per-well PV of forward net revenue at the deck discount."},
-    {"label": "Remaining EUR", "value": f"{roll['total_eur_bbl']/1e3:,.0f} Mbbl"},
-    {"label": "Current Production", "value": f"{roll['total_current_bopd']:,.0f} bopd"},
+    {"label": "Deal PV10 (oil+gas)" if has_gas else "Deal PV10 (oil only)",
+     "value": f"${roll['total_pv10_usd']/1e6:,.1f}MM",
+     "delta": (f"{gas_share:.0f}% from gas" if has_gas else None), "delta_color": "off",
+     "help": "Sum of per-well PV of forward net revenue at the deck discount. Gas is "
+             "valued at the gas price via each well's GOR; set gas price 0 for oil-only."},
+    {"label": "Remaining EUR (oil)", "value": f"{roll['total_eur_bbl']/1e3:,.0f} Mbbl"},
+    {"label": "Current Rate", "value": f"{roll['total_current_boepd']:,.0f} boepd",
+     "help": f"{roll['total_current_bopd']:,.0f} bopd oil + gas/6 (energy-equivalent)."},
     {"label": "Wells Fit", "value": f"{roll['n_wells']}"
         + (f" ({len(skipped)} skipped)" if skipped else "")},
 ])
+
+# Low-confidence-fit guard: a noisy well with a weak decline fit can still post a
+# large PV10. Flag it so it is never silently trusted (the synthetic fleet fits
+# cleanly; real / BYOD data is where this bites).
+lowfit = table[table["r_squared"] < 0.5]
+if len(lowfit):
+    tot = table["pv10_usd"].sum()
+    share = (lowfit["pv10_usd"].sum() / tot * 100.0) if tot else 0.0
+    names = ", ".join(lowfit["well_id"].head(6))
+    st.warning(
+        f"⚠️ {len(lowfit)} well(s) have a weak decline fit (R² < 0.5) yet carry "
+        f"{share:.0f}% of PV10 — treat their value as low-confidence: {names}"
+        + (" …" if len(lowfit) > 6 else "") + ". See the R² column below.")
 
 if asking_mm > 0:
     prem = roll["pv10_minus_asking_usd"]
@@ -104,34 +143,95 @@ if asking_mm > 0:
                pt.pill(f"PV10 below asking — {ratio:,.2f}x ({prem/1e6:+,.1f}MM)", "bad"))
     st.markdown(
         f"**Asking ${asking_mm:,.0f}MM** → "
-        f"**${roll['usd_per_flowing_bbl']:,.0f}/flowing bbl** · {verdict}",
+        f"**${roll['usd_per_flowing_bbl']:,.0f}/flowing bbl** · "
+        f"**${roll['usd_per_flowing_boe']:,.0f}/flowing boe** · {verdict}",
         unsafe_allow_html=True)
-    st.caption("Quick-look only: PDP PV10 vs. asking ignores upside (PUDs, "
-               "behind-pipe), G&A, and plugging liability — it answers 'is the "
-               "producing base alone close to the number'.")
+    st.caption("Quick-look only: PV10 values producing oil + gas at the deck; it "
+               "ignores upside (PUDs, behind-pipe), G&A, and plugging liability. "
+               "$/flowing boe divides asking by oil+gas/6, the fairer metric on "
+               "gas-rich wells. It answers 'is the producing base alone close to "
+               "the number'.")
 
-pt.section("PV10 by Well", "Ranked — where the deal's value concentrates.")
+    # --- A&D benchmarking: where this deal sits vs typical PDP metrics ----------
+    pt.section("Deal Benchmarks", "Where the asking sits against typical PDP A&D ranges.")
+    LO_BOE, HI_BOE = 25_000.0, 50_000.0       # typical $/flowing-boe band for PDP packages
+    upb = roll["usd_per_flowing_boe"]
+    pv10_mult = roll["pv10_over_asking"]
+    boe_pill = (pt.pill("below band — cheap", "ok") if upb < LO_BOE
+                else pt.pill("above band — rich", "bad") if upb > HI_BOE
+                else pt.pill("in typical band", "info"))
+    mult_pill = (pt.pill("PV10 ≥ asking", "ok") if pv10_mult >= 1.0
+                 else pt.pill("PV10 < asking", "bad"))
+    bcols = st.columns(3)
+    bcols[0].metric("$/flowing BOE", f"${upb:,.0f}",
+                    help=f"Typical PDP band ≈ ${LO_BOE:,.0f}–${HI_BOE:,.0f}/flowing boe.")
+    bcols[1].metric("PV10 / Asking", f"{pv10_mult:,.2f}x")
+    bcols[2].metric("PV10 / flowing BOE",
+                    f"${roll['total_pv10_usd']/roll['total_current_boepd']:,.0f}"
+                    if roll['total_current_boepd'] else "—")
+    st.markdown(f"vs the ${LO_BOE/1e3:,.0f}–${HI_BOE/1e3:,.0f}k/flowing-boe PDP band: "
+                f"{boe_pill} · {mult_pill}", unsafe_allow_html=True)
+    theme.source_note(
+        "Benchmark band is a rule-of-thumb PDP range, not a fitted comp set — a "
+        "directional gut-check, not an appraisal. $/flowing boe = asking ÷ (oil + gas/6).")
+
+# table is already PV10-descending; cap the bar chart to the top wells so 100-well
+# fleets stay readable (the full ranking lives in the table + CSV below).
+TOP_N = 25
+ranked = table.reset_index(drop=True)
+shown = ranked.head(TOP_N)
+top_share = (shown["pv10_usd"].sum() / ranked["pv10_usd"].sum() * 100.0
+             if ranked["pv10_usd"].sum() > 0 else 0.0)
+cap_txt = (f"Top {len(shown)} of {len(ranked)} wells" if len(ranked) > TOP_N
+           else "All wells, ranked")
+pt.section("PV10 by Well", f"{cap_txt} — where the deal's value concentrates.")
+# Highlight the single highest-value well so the #1 is unmistakable.
+colors = [theme.GREEN if i == 0 else theme.BLUE for i in range(len(shown))]
 bar = go.Figure(go.Bar(
-    x=table["well_id"], y=table["pv10_usd"] / 1e6,
-    marker_color=theme.BLUE,
+    x=shown["well_id"], y=shown["pv10_usd"] / 1e6,
+    marker_color=colors,
     hovertemplate="%{x}: $%{y:.2f}MM<extra></extra>"))
-bar.update_layout(xaxis_title="well", yaxis_title="PV10 ($MM)",
+bar.update_layout(xaxis_title="well (ranked by PV10)", yaxis_title="PV10 ($MM)",
                   xaxis=dict(tickangle=-45, tickfont=dict(size=9)))
 st.plotly_chart(theme.style_fig(bar, height=320, legend=False), width="stretch")
+if len(ranked):
+    top = ranked.iloc[0]
+    st.caption(
+        f"Highest-value well: **{top['well_id']}** at "
+        f"**${top['pv10_usd']/1e6:,.1f}MM** PV10"
+        + (f" · the top {len(shown)} wells hold {top_share:.0f}% of total PV10."
+           if len(ranked) > TOP_N else "."))
 theme.source_note(
     "PV10 ($MM) per well: Arps forecast from the last history month to the "
-    f"{econ_limit:.0f}-bopd economic limit; net revenue = oil x (price − LOE) x "
-    "NRI x (1 − severance), discounted effective-annually at the deck.")
+    f"{econ_limit:.0f}-bopd economic limit; net revenue = [oil x (price − LOE) + "
+    "gas x gas-price] x NRI x (1 − severance), gas riding the oil decline at the "
+    "well's GOR, discounted effective-annually at the deck. Green = highest-value well.")
 
 pt.section("Per-Well Screen", "Fit parameters and value, one row per well.")
-disp = table.rename(columns={
-    "well_id": "Well", "model": "Model", "qi_bopd": "qi (bopd)",
+# Name lookup so the table isn't an opaque list of API numbers: prefer a well_name
+# carried in the data (Colorado / synthetic), else the shared registry.
+tidy_names = common.pdp_tidy(csv_text)
+if "well_name" in tidy_names.columns:
+    name_map = tidy_names.groupby("well_id")["well_name"].first().to_dict()
+else:
+    import fleet_registry
+    name_map = {w: fleet_registry.get(w).name for w in table["well_id"]}
+disp = table.copy()
+disp.insert(1, "name", disp["well_id"].map(name_map).fillna(""))
+cols = ["well_id", "name", "model", "qi_bopd", "di_annual", "b", "r_squared",
+        "n_months", "current_bopd", "current_boepd", "gor_mcf_bbl",
+        "remaining_eur_bbl", "pv10_oil_usd", "pv10_gas_usd", "pv10_usd"]
+disp = disp[[c for c in cols if c in disp.columns]].rename(columns={
+    "well_id": "Well", "name": "Name", "model": "Model", "qi_bopd": "qi (bopd)",
     "di_annual": "Di (1/yr)", "b": "b", "r_squared": "R²", "n_months": "Months",
-    "current_bopd": "Current (bopd)", "remaining_eur_bbl": "Remaining EUR (bbl)",
-    "pv10_usd": "PV10 $"})
+    "current_bopd": "Current (bopd)", "current_boepd": "Current (boepd)",
+    "gor_mcf_bbl": "GOR (mcf/bbl)", "remaining_eur_bbl": "Remaining EUR (bbl)",
+    "pv10_oil_usd": "PV10 oil $", "pv10_gas_usd": "PV10 gas $", "pv10_usd": "PV10 total $"})
 st.dataframe(disp, width="stretch", hide_index=True,
              column_config={
-                 "PV10 $": st.column_config.NumberColumn(format="$%,.0f"),
+                 "PV10 oil $": st.column_config.NumberColumn(format="$%,.0f"),
+                 "PV10 gas $": st.column_config.NumberColumn(format="$%,.0f"),
+                 "PV10 total $": st.column_config.NumberColumn(format="$%,.0f"),
                  "Remaining EUR (bbl)": st.column_config.NumberColumn(format="%,.0f"),
              })
 st.download_button("Download per-well screen (CSV)", data=table.to_csv(index=False),
@@ -150,6 +250,26 @@ st.selectbox("Well", well_ids, key="well_id")
 
 tidy = common.pdp_tidy(csv_text)
 g = tidy[tidy["well_id"] == ss["well_id"]]
+
+# Identity line: use whatever metadata the source carries (Colorado rows carry
+# well_name/operator/field/formation), and enrich the suite-shared synthetic ids
+# (well_0NN) from the shared fleet registry so the same well reads coherently
+# across all three products.
+_row0 = g.iloc[0] if len(g) else None
+_bits: list[str] = []
+if _row0 is not None:
+    for col, fmt in (("well_name", "{}"), ("operator", "{}"),
+                     ("field", "{}"), ("formation", "{}")):
+        val = str(_row0[col]) if col in g.columns and pd.notna(_row0[col]) else ""
+        if val and val.lower() != "nan":
+            _bits.append(fmt.format(val))
+if not _bits and source_label == common.PDP_SYNTH_LABEL:
+    import fleet_registry
+    m = fleet_registry.get(ss["well_id"])
+    _bits = [m.name, f"{m.basin} · {m.area}", m.formation, f"{m.lift} lift"]
+if _bits:
+    st.caption("**" + ss["well_id"] + "** — " + " · ".join(dict.fromkeys(_bits)))
+
 t_hist, q_hist = pdp.well_history(g)
 fit = pdp.fit_well(t_hist, q_hist, well_id=ss["well_id"])
 fc_rates, _fc_vols = pdp.forecast_volumes(fit, econ_limit)

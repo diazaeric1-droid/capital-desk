@@ -20,9 +20,21 @@ OIL, NRI, DISC, DECK = common.deck()
 pt.masthead("capital", "Backlog",
             "The project inventory — risked per-project economics at the deck.")
 
-# ---- source (BYOD upload wins; also offered on the Data page) -------------------
+# ---- source picker (BYOD upload, when present, overrides this) -------------------
+ss = st.session_state
+if not ss.get("backlog_csv_text"):
+    pick = st.radio(
+        "Backlog source",
+        ["Synthetic 45-project demo", "Colorado refrac candidates (real wells)"],
+        horizontal=True,
+        index=1 if ss.get("backlog_source") == "colorado" else 0,
+        help="The synthetic demo is a defensible drilling/DUC/workover mix. The "
+             "Colorado option derives refrac candidates from the REAL ECMC fleet's "
+             "decline fits — real well identities + shapes, modeled workover economics.")
+    ss["backlog_source"] = "colorado" if pick.startswith("Colorado") else "synthetic"
+
 csv_text, source_label, is_byod = common.resolve_backlog()
-pt.context_bar([("Deck", DECK), ("Data", source_label)])
+pt.context_bar([("Deck", common.program_deck()), ("Data", source_label)])
 
 with st.expander("Bring your own backlog (CSV)"):
     st.caption("Required columns: "
@@ -72,23 +84,44 @@ st.caption(
     "exceeds any single-year budget, which is exactly what makes the budget and "
     "rig constraints bind on the Optimizer page.")
 
-pt.section("Risked NPV by Project", "Ranked at the deck — the sub-economic tail in red.")
-d = econ.sort_values("risked_npv_usd", ascending=False)
+pt.section("Risked NPV by Project",
+           "Ranked at the deck — #1 in green, the sub-economic tail in red.")
+d = econ.sort_values("risked_npv_usd", ascending=False).reset_index(drop=True)
+# Top-ranked bar green so the highest project is unmistakable; positive blue;
+# sub-economic red. Every bar is labeled with its project_id on the x-axis.
+colors = [theme.GREEN if i == 0 else (theme.BLUE if v > 0 else theme.RED)
+          for i, v in enumerate(d["risked_npv_usd"])]
 fig = go.Figure(go.Bar(
     x=d["project_id"], y=d["risked_npv_usd"] / 1e6,
-    marker_color=[theme.BLUE if v > 0 else theme.RED for v in d["risked_npv_usd"]],
-    hovertemplate="%{x}: $%{y:.2f}MM<extra></extra>"))
-fig.update_layout(xaxis_title="project (ranked)", yaxis_title="risked NPV ($MM)",
-                  xaxis=dict(showticklabels=False))
-st.plotly_chart(theme.style_fig(fig, height=320, legend=False), width="stretch")
+    marker_color=colors, customdata=d[["name", "label"]],
+    hovertemplate="<b>%{x}</b> — %{customdata[0]} (%{customdata[1]})<br>"
+                  "risked NPV $%{y:.2f}MM<extra></extra>"))
+top = d.iloc[0]
+fig.add_annotation(x=top["project_id"], y=top["risked_npv_usd"] / 1e6,
+                   text=f"#1 {top['name']} · ${top['risked_npv_usd']/1e6:,.1f}MM",
+                   showarrow=True, arrowhead=2, ax=0, ay=-28,
+                   font=dict(size=10, color=theme.GREEN))
+fig.update_layout(xaxis_title="project (ranked by risked NPV)",
+                  yaxis_title="risked NPV ($MM)",
+                  xaxis=dict(tickangle=-60, tickfont=dict(size=8)))
+st.plotly_chart(theme.style_fig(fig, height=360, legend=False), width="stretch")
 theme.source_note(
     "Risked NPV ($MM) = Pc x PV(net revenue) − capex per project (Arps type curve "
-    "→ monthly DCF, effective-annual discounting at the deck); red = sub-economic.")
+    "→ monthly DCF, effective-annual discounting at the deck); ranked left→right, "
+    "green = top project, red = sub-economic. Hover any bar for its name and type.")
 
-pt.section("Project Inventory", "Per-project risked economics at the deck.")
+pt.section("Project Inventory", "Per-project risked economics at the deck — ranked by risked NPV.")
 table = econ[["project_id", "name", "label", "area", "capex_usd", "risked_npv_usd",
               "npv_usd", "irr_pct", "payout_months", "eur_bbl", "capital_efficiency",
               "pc", "rig_days"]].copy()
+table = table.sort_values("risked_npv_usd", ascending=False).reset_index(drop=True)
+table.insert(0, "Rank", range(1, len(table) + 1))
+# IRR clamps to 500 (the solver's "still positive at 500%" sentinel) and payout is
+# inf for the sub-economic tail — render both as readable strings, not raw values.
+table["irr_pct"] = table["irr_pct"].map(
+    lambda v: ">500%" if pd.notna(v) and v >= 500 else (f"{v:.0f}%" if pd.notna(v) else "—"))
+table["payout_months"] = table["payout_months"].map(
+    lambda v: "—" if (pd.isna(v) or v == float("inf")) else f"{v:.0f}")
 table = table.rename(columns={
     "project_id": "ID", "name": "Project", "label": "Type", "area": "Area",
     "capex_usd": "Capex $", "risked_npv_usd": "Risked NPV $", "npv_usd": "NPV $",

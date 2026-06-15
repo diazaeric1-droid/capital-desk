@@ -47,48 +47,81 @@ with c_src2:
                           help="Validated before it can become an AFE — bad fields "
                                "are reported in plain English.")
 
+interventions = list(core.afe_cost_db.COST_TEMPLATES)
+
+# Form fields live in keyed session state, so MANUAL EDITS PERSIST across reruns.
+# An example / upload / chained diagnosis is applied to the form ONLY when the
+# source actually changes (tracked by a token), instead of re-clobbering the form
+# on every rerun (the old value= pattern silently discarded manual edits).
+_DEFAULTS = {
+    "d_well_id": "ED-001H", "d_api": "42-109-12345", "d_field": "Delaware Basin",
+    "d_operator": "Operator LLC", "d_intervention": interventions[0],
+    "d_requested_by": "Eric Diaz, Staff PE",
+    "d_diagnosis": ("Scale signature with declining intake pressure; treatment "
+                    "required before mechanical work."),
+    "d_rate": 100.0, "d_decline": 0.6, "d_wi": 1.0,
+}
+for _k, _v in _DEFAULTS.items():
+    ss.setdefault(_k, _v)
+
 preset: dict = {}
+token = "manual"
 if up is not None:
     try:
         payload = json.loads(up.getvalue().decode("utf-8"))
         diag_ok = core.afe_models.AFEDiagnosis.from_pe_copilot(payload)
-        preset = {k: getattr(diag_ok, k) for k in (
-            "well_id", "api_number", "field", "operator", "intervention",
-            "primary_diagnosis", "incremental_rate_bopd",
-            "expected_uplift_decline_per_yr", "requested_by")}
-        st.success(f"Validated diagnosis for {diag_ok.well_id} ({diag_ok.intervention}).")
     except (ValueError, json.JSONDecodeError) as exc:
         st.error(f"Diagnosis rejected: {exc}")
         st.stop()
+    preset = {k: getattr(diag_ok, k) for k in (
+        "well_id", "api_number", "field", "operator", "intervention",
+        "primary_diagnosis", "incremental_rate_bopd",
+        "expected_uplift_decline_per_yr", "requested_by")}
+    token = f"upload:{up.name}:{up.size}"
+    st.success(f"Validated diagnosis for {diag_ok.well_id} ({diag_ok.intervention}).")
 elif chosen != "(manual)":
     preset = json.loads((core.EXAMPLES_DIR / chosen).read_text())
+    token = f"example:{chosen}"
 elif ss.get("diag_preset"):
-    preset = ss["diag_preset"]          # loaded on the Data page
+    preset = ss["diag_preset"]          # chained in from the Data page / PE Copilot
+    token = "session-preset"
 
-interventions = list(core.afe_cost_db.COST_TEMPLATES)
+
+def _apply_preset(p: dict) -> None:
+    text_map = {"d_well_id": "well_id", "d_api": "api_number", "d_field": "field",
+                "d_operator": "operator", "d_requested_by": "requested_by",
+                "d_diagnosis": "primary_diagnosis"}
+    for key, src in text_map.items():
+        if p.get(src) is not None:
+            ss[key] = str(p[src])
+    if p.get("intervention") in interventions:
+        ss["d_intervention"] = p["intervention"]
+    if p.get("incremental_rate_bopd") is not None:
+        ss["d_rate"] = float(min(5000.0, max(1.0, float(p["incremental_rate_bopd"]))))
+    if p.get("expected_uplift_decline_per_yr") is not None:
+        ss["d_decline"] = float(min(1.95, max(0.05, float(p["expected_uplift_decline_per_yr"]))))
+
+
+if token != "manual" and ss.get("_diag_token") != token:
+    _apply_preset(preset)
+    ss["_diag_token"] = token
+    if token != "session-preset":
+        st.caption("Loaded into the form — edit any field freely; your edits persist "
+                   "and won't reset on rerun (pick a different example to reload).")
+
 f1, f2, f3 = st.columns(3)
-well_id = f1.text_input("Well ID", value=preset.get("well_id", "ED-001H"))
-api = f2.text_input("API #", value=preset.get("api_number", "42-109-12345"))
-field = f3.text_input("Field", value=preset.get("field", "Delaware Basin"))
+well_id = f1.text_input("Well ID", key="d_well_id")
+api = f2.text_input("API #", key="d_api")
+field = f3.text_input("Field", key="d_field")
 f4, f5, f6 = st.columns(3)
-operator = f4.text_input("Operator", value=preset.get("operator", "Operator LLC"))
-intervention = f5.selectbox(
-    "Intervention", interventions,
-    index=(interventions.index(preset["intervention"])
-           if preset.get("intervention") in interventions else 0))
-requested_by = f6.text_input("Requested by",
-                             value=preset.get("requested_by", "Eric Diaz, Staff PE"))
-diagnosis_text = st.text_area(
-    "Primary diagnosis", height=90,
-    value=preset.get("primary_diagnosis",
-                     "Scale signature with declining intake pressure; treatment "
-                     "required before mechanical work."))
+operator = f4.text_input("Operator", key="d_operator")
+intervention = f5.selectbox("Intervention", interventions, key="d_intervention")
+requested_by = f6.text_input("Requested by", key="d_requested_by")
+diagnosis_text = st.text_area("Primary diagnosis", height=90, key="d_diagnosis")
 g1, g2, g3 = st.columns(3)
-rate = g1.number_input("Incremental uplift (BOPD)", 1.0, 5000.0,
-                       float(preset.get("incremental_rate_bopd", 100.0)), 5.0)
-decline = g2.number_input("Uplift decline (1/yr)", 0.05, 1.95,
-                          float(preset.get("expected_uplift_decline_per_yr", 0.6)), 0.05)
-wi = g3.number_input("Working interest (WI)", 0.0, 1.0, 1.0, 0.05,
+rate = g1.number_input("Incremental uplift (BOPD)", 1.0, 5000.0, step=5.0, key="d_rate")
+decline = g2.number_input("Uplift decline (1/yr)", 0.05, 1.95, step=0.05, key="d_decline")
+wi = g3.number_input("Working interest (WI)", 0.0, 1.0, step=0.05, key="d_wi",
                      help="Operator's share of COST. Revenue share (NRI) and price "
                           "come from the global deck in the sidebar.")
 
@@ -132,9 +165,20 @@ with st.expander("Line-Item Detail"):
                        "Total $": st.column_config.NumberColumn(format="$%,.0f")})
 
 # ---- net economics at the deck -----------------------------------------------
+SEV = float(ss.get("severance_pct", 7.5)) / 100.0     # deck severance (shared with Screen)
+
+
+def _net_npv_after_severance(net_npv: float, net_cost: float) -> float:
+    """Apply the deck severance to an AFE net NPV. The component's net NPV is
+    net_pv − net_cost (no production tax); severance scales revenue only, so
+    net_pv = net_npv + net_cost, taxed net_pv·(1−sev), cost untaxed."""
+    net_pv = net_npv + net_cost
+    return net_pv * (1.0 - SEV) - net_cost
+
+
 pt.section("Net Economics",
-           f"WI {wi:.0%} of cost · NRI {NRI:.0%} of revenue · ${OIL:.0f}/bbl · "
-           f"{DISC:.1%} effective-annual discount.")
+           f"WI {wi:.0%} of cost · NRI {NRI:.0%} of revenue · ${OIL:.0f}/bbl − "
+           f"$12/bbl LOE · {SEV:.1%} severance · {DISC:.1%} effective-annual discount.")
 if intervention == "p_and_a":
     pt.empty_state("P&A is a cost-only job — production economics do not apply.",
                    "Justified against remaining liability, plugging-bond release, "
@@ -144,31 +188,40 @@ else:
     econ = core.draft_economics(rollup["total"], rate, uplift_decline_per_yr=decline,
                                 realized_price_per_bbl=OIL, working_interest=wi,
                                 net_revenue_interest=NRI, discount_rate=DISC)
+    net_npv_sev = _net_npv_after_severance(econ.net_npv_10pct_usd,
+                                           econ.net_cost_to_operator_usd)
     pt.kpi_row([
         {"label": "Gross NPV", "value": f"${econ.npv_10pct_usd/1e6:,.2f}MM"},
-        {"label": "Net NPV to Operator", "value": f"${econ.net_npv_10pct_usd/1e6:,.2f}MM",
-         "help": "WI% of cost, NRI% of revenue — what the operator actually books."},
+        {"label": "Net NPV to Operator", "value": f"${net_npv_sev/1e6:,.2f}MM",
+         "help": f"WI% of cost, NRI% of revenue, less {SEV:.1%} severance — what the "
+                 "operator books. Same tax basis the PDP screen applies."},
         {"label": "Payout", "value": ("—" if econ.payout_months == float("inf")
                                       else f"{econ.payout_months:.0f} mo")},
-        {"label": "First-Year Add", "value": f"{econ.incremental_first_year_bbl:,.0f} bbl"},
+        {"label": "First-Year Add (gross)", "value": f"{econ.incremental_first_year_bbl:,.0f} bbl",
+         "help": "Gross incremental oil — not reduced by NRI."},
     ])
     deck_rows = core.afe_economics.price_sensitivity(
         rollup["total"], rate, uplift_decline_per_yr=decline,
         working_interest=wi, net_revenue_interest=NRI, discount_rate=DISC)
     deck_df = pd.DataFrame(deck_rows)
+    net_cost = econ.net_cost_to_operator_usd
     deck_df = pd.DataFrame({
         "Realized $/bbl": deck_df["realized_price"].map(lambda v: f"${v:,.0f}"),
         "Gross NPV": deck_df["npv_usd"].map(lambda v: f"${v/1e6:,.2f}MM"),
-        "Net NPV": deck_df["net_npv_usd"].map(lambda v: f"${v/1e6:,.2f}MM"),
+        "Net NPV (after sev.)": deck_df["net_npv_usd"].map(
+            lambda v: f"${_net_npv_after_severance(v, net_cost)/1e6:,.2f}MM"),
         "Payout (mo)": deck_df["payout_months"].map(
             lambda v: f"{v:.0f}" if v != float("inf") else "—")})
     st.dataframe(deck_df, width="stretch", hide_index=True)
-    theme.source_note("Price-deck sensitivity: NPV at a fixed uplift across a "
-                      "realized-price strip, WI/NRI and discount held at the deck.")
+    theme.source_note(f"Price-deck sensitivity: NPV at a fixed uplift across a "
+                      f"realized-price strip; WI/NRI, {SEV:.1%} severance, and discount "
+                      "held at the deck.")
 
 # ---- Monte-Carlo --------------------------------------------------------------
-pt.section("Probabilistic Economics",
-           "10,000 trials over uplift (±30%), decline (±0.15 abs), and price (~$12 sd).")
+pt.section("Probabilistic Economics — Gross NPV",
+           "10,000 trials over uplift (±30%), decline (±0.15 abs), and price (~$12 sd). "
+           "These are GROSS NPV (before WI/NRI), so they bracket the Gross NPV above — "
+           "not the Net-to-Operator figure.")
 if intervention == "p_and_a":
     st.caption("Not applicable to a cost-only job.")
 elif st.button("Run Monte-Carlo NPV"):
@@ -177,9 +230,9 @@ elif st.button("Run Monte-Carlo NPV"):
         uplift_decline_per_yr=decline, realized_price_per_bbl=OIL,
         discount_rate=DISC)
     pt.kpi_row([
-        {"label": "P10 NPV (Downside)", "value": f"${mc.npv_p10_usd/1e6:,.2f}MM"},
-        {"label": "P50 NPV (Median)", "value": f"${mc.npv_p50_usd/1e6:,.2f}MM"},
-        {"label": "P90 NPV (Upside)", "value": f"${mc.npv_p90_usd/1e6:,.2f}MM"},
+        {"label": "P10 Gross NPV (Downside)", "value": f"${mc.npv_p10_usd/1e6:,.2f}MM"},
+        {"label": "P50 Gross NPV (Median)", "value": f"${mc.npv_p50_usd/1e6:,.2f}MM"},
+        {"label": "P90 Gross NPV (Upside)", "value": f"${mc.npv_p90_usd/1e6:,.2f}MM"},
         {"label": "P(Payout < 24 mo)", "value": f"{mc.probability_of_payout*100:.0f}%"},
     ])
     items_t = sorted(mc.tornado.items(), key=lambda kv: kv[1]["swing"])
@@ -231,25 +284,37 @@ if st.button("Generate AFE", type="primary"):
             markdown = core.afe_markdown(diag_dict, working_interest=wi,
                                          net_revenue_interest=NRI, realized_price=OIL)
         ss["_afe_markdown"] = markdown
+        # Snapshot the EXACT inputs the markdown was generated from, so the preview,
+        # the .docx cover, the filename, and submit-to-pipeline all describe ONE AFE
+        # even if the form is edited afterwards (the preview must never silently
+        # disagree with the file you download or the pipeline row you create).
+        ss["_afe_snapshot"] = dict(diag_dict)
         ss["_afe_pending"] = {"well_id": well_id, "intervention": intervention,
                               "total_cost_usd": rollup["total"],
                               "requested_by": requested_by}
 
 if ss.get("_afe_markdown"):
+    snap = ss.get("_afe_snapshot") or diag_dict
+    if snap != diag_dict:
+        st.warning("Inputs changed since this AFE was generated — the preview and "
+                   "downloads below reflect the **generated** version. Click "
+                   "**Generate AFE** again to refresh them to the current form.")
+    snap_well = snap.get("well_id", well_id)
+    snap_int = snap.get("intervention", intervention)
     with st.expander("AFE Preview", expanded=True):
         st.markdown(ss["_afe_markdown"])
     d1, d2, d3 = st.columns(3)
     d1.download_button("Download .md", ss["_afe_markdown"],
-                       file_name=f"AFE_{well_id}_{intervention}.md")
+                       file_name=f"AFE_{snap_well}_{snap_int}.md")
     try:
         with tempfile.TemporaryDirectory() as td:
             p = core.afe_docx_builder.build_docx(
                 ss["_afe_markdown"], Path(td) / "afe.docx",
-                core.afe_models.AFEDiagnosis(**diag_dict))
+                core.afe_models.AFEDiagnosis(**snap))
             docx_bytes = p.read_bytes()
         d2.download_button(
             "Download .docx", docx_bytes,
-            file_name=f"AFE_{well_id}_{intervention}.docx",
+            file_name=f"AFE_{snap_well}_{snap_int}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     except Exception as exc:  # noqa: BLE001 — docx must never block the markdown
         d2.caption(f"docx unavailable: {type(exc).__name__}")

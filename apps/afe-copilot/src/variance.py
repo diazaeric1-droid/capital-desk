@@ -88,26 +88,31 @@ def analyze_variance(afe_df: pd.DataFrame, actuals_df: pd.DataFrame) -> Variance
 
 
 def demo_variance_data() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Synthetic AFE-vs-actuals for two closed-out AFEs — used by the dashboard so
-    the Variance tab is populated out-of-the-box (incl. an unbudgeted 'Fishing' line
-    and a >10% overrun that should trip a supplement)."""
+    """Synthetic AFE-vs-actuals for two CLOSED-OUT (executed) AFEs — used by the
+    dashboard so the Variance tab is populated out-of-the-box (incl. an unbudgeted
+    'Fishing' line and a >10% overrun that should trip a supplement).
+
+    NOTE (Capital Desk product divergence — see VENDORING.md): these are prior-year
+    AFE numbers (AFE-2025-xxxx), deliberately DISTINCT from the live pipeline
+    tracker's in-flight AFE-2026-xxxx records, so the same AFE number never carries
+    two different scopes across the Pipeline Board and the Variance page."""
     afe = pd.DataFrame([
-        ("AFE-2026-0042", "Workover rig", 72_000),
-        ("AFE-2026-0042", "Coiled tubing unit", 84_000),
-        ("AFE-2026-0042", "Acid system", 38_000),
-        ("AFE-2026-0042", "Flowback / disposal", 31_000),
-        ("AFE-2026-0047", "Workover rig", 54_000),
-        ("AFE-2026-0047", "Downhole pump", 5_200),
-        ("AFE-2026-0047", "Rod inspection", 12_000),
+        ("AFE-2025-0188", "Workover rig", 72_000),
+        ("AFE-2025-0188", "Coiled tubing unit", 84_000),
+        ("AFE-2025-0188", "Acid system", 38_000),
+        ("AFE-2025-0188", "Flowback / disposal", 31_000),
+        ("AFE-2025-0191", "Workover rig", 54_000),
+        ("AFE-2025-0191", "Downhole pump", 5_200),
+        ("AFE-2025-0191", "Rod inspection", 12_000),
     ], columns=["afe_number", "category", "line_total_usd"])
     actuals = pd.DataFrame([
-        ("AFE-2026-0042", "Workover rig", 90_000),       # rig ran long (+25%)
-        ("AFE-2026-0042", "Coiled tubing unit", 84_000),
-        ("AFE-2026-0042", "Acid system", 41_500),
-        ("AFE-2026-0042", "Flowback / disposal", 33_000),
-        ("AFE-2026-0042", "Fishing", 28_500),            # UNBUDGETED — must not be hidden
-        ("AFE-2026-0047", "Workover rig", 51_000),
-        ("AFE-2026-0047", "Downhole pump", 5_200),
-        ("AFE-2026-0047", "Rod inspection", 11_200),
+        ("AFE-2025-0188", "Workover rig", 90_000),       # rig ran long (+25%)
+        ("AFE-2025-0188", "Coiled tubing unit", 84_000),
+        ("AFE-2025-0188", "Acid system", 41_500),
+        ("AFE-2025-0188", "Flowback / disposal", 33_000),
+        ("AFE-2025-0188", "Fishing", 28_500),            # UNBUDGETED — must not be hidden
+        ("AFE-2025-0191", "Workover rig", 51_000),
+        ("AFE-2025-0191", "Downhole pump", 5_200),
+        ("AFE-2025-0191", "Rod inspection", 11_200),
     ], columns=["afe_number", "category", "actual_usd"])
     return afe, actuals

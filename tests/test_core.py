@@ -69,17 +69,19 @@ def test_backlog_committed_and_realistic(booted):
 
 
 def test_navigation_matches_design(booted):
-    """The page map is the product design: 4 sections, 8 pages, material icons
+    """The page map is the product design: 5 sections, 9 pages, material icons
     (no emoji), and every view file exists."""
     core = booted
-    assert list(core.NAV) == ["Authorize", "Program", "Screen", "Data"]
+    assert list(core.NAV) == ["Authorize", "Program", "Screen", "File", "Data"]
     titles = {sec: [t for t, _p, _i in pages] for sec, pages in core.NAV.items()}
     assert titles["Authorize"] == ["Pipeline Board", "Draft AFE", "Variance"]
     assert titles["Program"] == ["Backlog", "Optimizer", "Frontier & Sensitivity"]
     assert titles["Screen"] == ["PDP Screener"]
+    assert titles["File"] == ["Regulatory Filing"]
     assert titles["Data"] == ["Sources & BYOD"]
     allowed_icons = {":material/approval:", ":material/account_balance:",
-                     ":material/query_stats:", ":material/database:"}
+                     ":material/query_stats:", ":material/description:",
+                     ":material/database:"}
     for _sec, pages in core.NAV.items():
         for title, path, icon in pages:
             assert (ROOT / path).exists(), f"missing view file for {title}: {path}"

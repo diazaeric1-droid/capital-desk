@@ -19,7 +19,7 @@ horizontal program. NDIC remains available as a bring-your-own-export option (se
 
 ## What's in this slice
 
-- **28 wells**, ~2,000 well-months, spanning **2016–2026**.
+- **28 wells**, ~2,000 well-months, spanning **2017–2026**.
 - **17 operators** (Noble/Chevron-legacy, PDC, Extraction, Bonanza Creek, Kerr-McGee,
   Crestone, HighPoint, and independents) — a realistic mixed fleet.
 - Formations: **Niobrara**, **Codell**, and commingled **Niobrara-Codell**.

@@ -23,6 +23,7 @@ ss = st.session_state
 ss.setdefault("oil_price", 70.0)      # realized oil price, $/bbl
 ss.setdefault("nri", 0.80)            # net revenue interest (revenue share)
 ss.setdefault("discount", 0.10)       # effective-annual discount rate
+ss.setdefault("severance_pct", 7.5)   # severance + ad valorem (%), AFE + PDP alike
 ss.setdefault("well_id", "")          # PDP screener drill-down selection
 ss.setdefault("data_source", "Bundled demo data")
 ss.setdefault("anthropic_key", "")    # BYOK, session-only — never stored
@@ -36,6 +37,11 @@ with st.sidebar:
               key="discount",
               help="The suite convention: DF(m) = (1+r)^(m/12). A 10% input means "
                    "10% per YEAR — not the 10.47% that monthly compounding implies.")
+    st.slider("Severance + ad valorem (%)", 0.0, 15.0, step=0.5,
+              key="severance_pct",
+              help="Production-tax drag on net revenue. Applied to BOTH the AFE net "
+                   "economics (Authorize) and the PDP screen (Screen) so the two value "
+                   "barrels the same way. ~4.6% TX severance; ~7–8% all-in with ad valorem.")
     st.text_input("Anthropic API key (optional)", type="password",
                   key="anthropic_key",
                   help="Bring your own key — session-only, never stored. Powers the "

@@ -22,7 +22,7 @@ ss = st.session_state
 pt.masthead("capital", "Optimizer",
             "MILP vs. greedy at the same constraints — with a provable optimality bound.")
 csv_text, source_label, _is_byod = common.resolve_backlog()
-pt.context_bar([("Deck", DECK), ("Data", source_label),
+pt.context_bar([("Deck", common.program_deck()), ("Data", source_label),
                 ("Solver", "CBC branch-and-bound (PuLP)")])
 
 projects = common.parse_backlog(csv_text)
@@ -57,6 +57,8 @@ pt.kpi_row([
      "delta": f"of ${budget/1e6:,.0f}MM budget", "delta_color": "off"},
     {"label": "Rig-Days Used", "value": f"{program.rig_used:.0f} / {rig_cap:.0f}"},
     {"label": "Projects Selected", "value": f"{program.n_selected} / {program.n_available}"},
+    {"label": "Capital Efficiency", "value": f"{program.weighted_cap_eff:.2f}x",
+     "help": "Capex-weighted risked NPV per $ of capital across the funded slate."},
     {"label": "Optimizer vs. Greedy", "value": f"+${uplift/1e6:,.1f}MM",
      "delta": f"+{uplift_pct:.1f}%", "help": "MILP over rank-by-efficiency-and-cut "
                                              "at the same budget + rig limit."},
@@ -81,8 +83,11 @@ with l:
     pt.section("Funded vs. Rejected", "Capex vs. risked NPV; marker size ∝ rig-days.")
     sc = econ.copy()
     sc["funded"] = sc["project_id"].isin(sel)
-    size = (sc["rig_days"] / sc["rig_days"].max() * 30 + 6
-            if sc["rig_days"].max() > 0 else 12)
+    maxr = sc["rig_days"].max()
+    # always a Series (a scalar fallback would crash on size[g.index] for a
+    # zero-rig-day backlog — e.g. a BYOD upload with the column all zero).
+    size = ((sc["rig_days"] / maxr * 30 + 6) if maxr > 0
+            else pd.Series(12.0, index=sc.index))
     scat = go.Figure()
     for funded, name, color in [(True, "Funded", theme.GREEN),
                                 (False, "Rejected", theme.GREY)]:
@@ -95,6 +100,14 @@ with l:
                             line=dict(width=0.5, color=theme.BG)),
                 hovertemplate="%{text}<br>capex $%{x:.1f}MM<br>risked NPV "
                               "$%{y:.1f}MM<extra>" + name + "</extra>"))
+    # label the single highest-NPV funded project so the scatter is identifiable
+    # without hovering every point.
+    fund = sc[sc["funded"]]
+    if len(fund):
+        tp = fund.loc[fund["risked_npv_usd"].idxmax()]
+        scat.add_annotation(x=tp["capex_usd"] / 1e6, y=tp["risked_npv_usd"] / 1e6,
+                            text=tp["project_id"], showarrow=True, arrowhead=2,
+                            ax=18, ay=-16, font=dict(size=9, color=theme.GREEN))
     scat.update_layout(xaxis_title="capex ($MM)", yaxis_title="risked NPV ($MM)")
     st.plotly_chart(theme.style_fig(scat, height=330), width="stretch")
     theme.source_note("0/1 MILP (CBC via PuLP); funded points cluster toward high "
@@ -138,10 +151,18 @@ if len(sched):
     sf.update_layout(barmode="group",
                      yaxis_title="capex ($MM)",
                      yaxis2=dict(overlaying="y", side="right", title="rig-days"))
+    over = agg[agg["rig"] > rig_q]
+    if len(over):
+        st.caption(
+            f"⚠️ {', '.join(over['quarter'])} exceeds the {rig_q:.0f} rig-day/quarter "
+            "cap: projects that don't fit any earlier feasible quarter spill into the "
+            "final quarter rather than being dropped. Raise the per-quarter cap or the "
+            "rig limit on the Optimizer to clear the overflow.")
     st.plotly_chart(theme.style_fig(sf, height=300), width="stretch")
     theme.source_note("Greedy bin-pack by capital efficiency into the earliest "
-                      "feasible quarter ≥ each project's earliest_quarter; left "
-                      "axis capex ($MM), right axis rig-days.")
+                      "feasible quarter ≥ each project's earliest_quarter; unplaceable "
+                      "projects spill into the final quarter (may exceed the per-quarter "
+                      "cap — flagged above). Left axis capex ($MM), right axis rig-days.")
     disp = sched.copy()
     disp["capex_usd"] = disp["capex_usd"].map(lambda v: f"${v/1e6:,.2f}MM")
     disp["risked_npv_usd"] = disp["risked_npv_usd"].map(lambda v: f"${v/1e6:,.2f}MM")
@@ -161,7 +182,8 @@ ptab = econ[econ["project_id"].isin(sel)].sort_values(
 ptab["Capex"] = ptab["capex_usd"].map(lambda v: f"${v/1e6:,.2f}MM")
 ptab["Risked NPV"] = ptab["risked_npv_usd"].map(lambda v: f"${v/1e6:,.2f}MM")
 ptab["Cap. Eff."] = ptab["capital_efficiency"].map(lambda v: f"{v:.2f}x")
-ptab["IRR"] = ptab["irr_pct"].map(lambda v: f"{v:.0f}%" if pd.notna(v) else "—")
+ptab["IRR"] = ptab["irr_pct"].map(
+    lambda v: ">500%" if pd.notna(v) and v >= 500 else (f"{v:.0f}%" if pd.notna(v) else "—"))
 ptab["Pc"] = ptab["pc"].map(lambda v: f"{v:.0%}")
 out = (ptab[["project_id", "name", "label", "area", "Capex", "Risked NPV",
              "Cap. Eff.", "IRR", "Pc"]]
@@ -173,4 +195,40 @@ st.download_button("Download funded program (CSV)", data=out.to_csv(index=False)
 theme.source_note("Selection by exact 0/1 MILP (CBC); greedy baseline and LP bound "
                   "reported above keep the uplift claim honest.")
 
-theme.references(["milp", "npv"])
+# ---- program-level Monte-Carlo --------------------------------------------------
+pt.section("Program Risk — Monte-Carlo",
+           "The funded program's NPV distribution over price AND each project's "
+           "chance of success — the P-curve a committee signs against, not a single "
+           "risked point.")
+price_sd = st.slider("Oil-price uncertainty (± $ std-dev)", 4.0, 25.0, 12.0, 1.0,
+                     help="Std-dev of realized oil price around the deck; each "
+                          "project also succeeds with probability Pc (else it loses "
+                          "its capex as a dry hole).")
+mc = common.program_montecarlo(csv_text, OIL, DISC, tuple(sorted(sel)), price_sd=price_sd)
+if mc is None:
+    pt.empty_state("Nothing funded to simulate under the current constraints.")
+else:
+    pt.kpi_row([
+        {"label": "P10 NPV (Downside)", "value": f"${mc['p10']/1e6:,.0f}MM"},
+        {"label": "P50 NPV (Median)", "value": f"${mc['p50']/1e6:,.0f}MM"},
+        {"label": "P90 NPV (Upside)", "value": f"${mc['p90']/1e6:,.0f}MM"},
+        {"label": "Mean NPV", "value": f"${mc['mean']/1e6:,.0f}MM"},
+        {"label": "P(Program Loss)", "value": f"{mc['p_loss']*100:.0f}%",
+         "help": "Share of trials where the whole funded program returns < $0."},
+    ])
+    hist = go.Figure(go.Histogram(x=mc["samples"] / 1e6, nbinsx=40,
+                                  marker_color=theme.BLUE))
+    hist.add_vline(x=mc["p50"] / 1e6, line_dash="dash", line_color=theme.NAVY,
+                   annotation_text="P50")
+    hist.add_vline(x=0, line_dash="dot", line_color=theme.RED)
+    hist.update_layout(xaxis_title="program NPV ($MM)", yaxis_title="trials")
+    st.plotly_chart(theme.style_fig(hist, height=300, legend=False), width="stretch")
+    st.caption(f"Deterministic risked NPV (${program.risked_npv/1e6:,.1f}MM) sits near "
+               "the mean; the spread is what price and dry-hole risk do to it — the "
+               "P10 is the number a risk-aware committee actually underwrites.")
+    theme.source_note(
+        "5,000 trials: price ~ Normal(deck, ±sd); each funded project books its "
+        "unrisked NPV at the sampled price on success (prob Pc) or −capex on a dry "
+        "hole. Per-project NPV(price) interpolated from a cached price grid.")
+
+theme.references(["milp", "npv", "monte_carlo"])

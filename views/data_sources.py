@@ -24,25 +24,40 @@ pt.masthead("capital", "Sources & BYOD",
 pt.context_bar([
     ("Deck", DECK),
     ("Backlog", "BYOD" if ss.get("backlog_csv_text") else "Bundled synthetic"),
-    ("Production", "BYOD" if ss.get("pdp_csv_text") else "Colorado ECMC (real)"),
+    ("Production", "BYOD" if ss.get("pdp_csv_text") else "Synthetic fleet (default)"),
 ])
 
 # ---- provenance -----------------------------------------------------------------
-pt.section("Provenance", "Every number traces to one of these three sources.")
+pt.section("Provenance", "Every number traces to one of these four sources.")
 
-st.markdown("**1 · Colorado ECMC monthly production — used by Screen** "
+st.markdown("**1 · Synthetic 100-well Permian fleet — Screen default** "
+            + pt.pill("synthetic, suite-shared", "warn"), unsafe_allow_html=True)
+theme.data_badge("synthetic", "Modeled monthly oil — future deals / private "
+                              "production aren't public data.")
+st.markdown(
+    "- The **same 100 well identities** (`well_001`…`well_100`) the other two "
+    "operator products use — same basin / area / formation / lift / lateral from "
+    "the shared `fleet_registry` — rendered as **monthly oil** for the PDP "
+    "decline screen (the sibling apps express the fleet as daily SCADA).\n"
+    "- Per-well Arps decline drawn off a deterministic seed (qi scaled by lateral "
+    "and lift), staggered first-production months → a realistic maturity + PV10 "
+    "spread, not 100 identical wells.\n"
+    "- Committed at `data/synthetic/fleet_pdp.csv`; its generator "
+    "(`generate_fleet_pdp.py`) sits beside it and reruns byte-identical.")
+
+st.markdown("**2 · Colorado ECMC monthly production — Screen (real option)** "
             + pt.pill("REAL public data", "ok"), unsafe_allow_html=True)
 theme.data_badge("real", "Colorado ECMC (formerly COGCC) public records — "
                          "redistributable under the Colorado Open Records Act.")
 st.markdown(
     "- 28 DJ Basin horizontal wells (Weld County, Niobrara / Codell), ~2,000 "
-    "well-months spanning 2016–2026, 17 operators.\n"
+    "well-months spanning 2017–2026, 17 operators.\n"
     "- Per-well, per-month oil / gas / water + producing days — genuine "
     "public-record production, not synthetic.\n"
     "- Reproducible: `data/real/colorado/fetch_colorado.py` harvests it from two "
     "free ECMC endpoints (see the README beside it).")
 
-st.markdown("**2 · Synthetic 45-project capital backlog — used by Program** "
+st.markdown("**3 · Synthetic 45-project capital backlog — used by Program** "
             + pt.pill("synthetic, defensible ranges", "warn"), unsafe_allow_html=True)
 theme.data_badge("synthetic", "Modeled drilling / DUC / workover backlog — future "
                               "capital projects aren't public data.")
@@ -54,7 +69,7 @@ st.markdown(
     "- Committed at `apps/capital-optimizer/data/synthetic/projects.csv`; its "
     "generator sits beside it.")
 
-st.markdown("**3 · AFE tracker + cost templates — used by Authorize** "
+st.markdown("**4 · AFE tracker + cost templates — used by Authorize** "
             + pt.pill("synthetic, demo-seeded", "warn"), unsafe_allow_html=True)
 theme.data_badge("synthetic", "Benchmark cost templates + a demo-seeded pipeline — "
                               "operator cost and authority data is never public.")

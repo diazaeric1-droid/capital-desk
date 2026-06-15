@@ -29,6 +29,7 @@ VIEWS = {
     "views/program_optimizer.py": (5, 2),
     "views/program_frontier.py": (0, 0),   # two charts, no tables
     "views/screen_pdp.py": (4, 1),
+    "views/file_regulatory.py": (0, 1),    # regulatory worksheet (Form 7 default)
     "views/data_sources.py": (0, 0),       # provenance + uploaders
 }
 

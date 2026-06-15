@@ -6,7 +6,9 @@ clone — no submodules, no per-app virtualenvs. `core.py` loads each app's `src
 package under a distinct alias via `importlib`
 (`afe` ← afe-copilot, `capital` ← capital-optimizer).
 
-Component repos are read-only sources: **nothing inside `apps/` is ever edited.**
+Component repos are read-only sources: **nothing inside `apps/` is edited except
+the documented product-integration divergences below** (currently one demo-data
+renumbering, to keep the integrated product internally consistent).
 
 ## What was vendored
 
@@ -62,6 +64,24 @@ Verified with `diff -r ../production-engineer-copilot/data/real/colorado data/re
 new PDP Screener (`src/pdp.py`) discounts **only** through it, so all three
 modules use one effective-annual convention: `DF(m) = (1+r)^(m/12)`
 (`discount_factors([12], 0.10) == 1.10` exactly, pinned by a product test).
+
+## Product-integration divergences from the vendored components
+
+Intentional, documented edits so the integrated product is internally consistent
+(re-apply on the next mirror sync):
+
+- `apps/afe-copilot/src/variance.py` — `demo_variance_data()` AFE numbers changed
+  from `AFE-2026-0042 / -0047` to prior-year **closed-out** numbers
+  `AFE-2025-0188 / -0191`. In the standalone component the variance demo and the
+  tracker demo never appear together; in Capital Desk the Pipeline Board and the
+  Variance page sit in one product, where the old numbers collided with the live
+  tracker's in-flight AFE-2026-xxxx records (same number, different scope/$). The
+  new numbers keep the closed-out actuals distinct from the in-flight pipeline.
+
+New product-local synthetic data (NOT mirrored from any component):
+`data/synthetic/fleet_pdp.csv` (+ `generate_fleet_pdp.py`) — the suite-shared
+100-well fleet rendered as monthly oil for the PDP Screener, keyed to the same
+`fleet_registry` identities the sibling products use.
 
 ## Runtime artifacts (gitignored, regenerated on first run)
 

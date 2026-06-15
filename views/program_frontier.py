@@ -19,17 +19,26 @@ ss = st.session_state
 pt.masthead("capital", "Frontier & Sensitivity",
             "The marginal value of capital, and the program's price-deck exposure.")
 csv_text, source_label, _is_byod = common.resolve_backlog()
-pt.context_bar([("Deck", DECK), ("Data", source_label),
+pt.context_bar([("Deck", common.program_deck()), ("Data", source_label),
                 ("Solver", "Program re-solved at every point")])
 
 projects = common.parse_backlog(csv_text)
 total_capex = sum(p.capex_usd for p in projects)
+total_rig = sum(p.rig_days for p in projects)
 ss.setdefault("budget_mm", 60)
-ss.setdefault("rig_cap", min(170, int(sum(p.rig_days for p in projects))))
+ss.setdefault("rig_cap", min(170, int(total_rig)))
+# Budget + rig live controls (shared session keys with the Optimizer page, so a
+# change here updates both — and the page works even if you land here first).
+c1, c2 = st.columns(2)
+with c1:
+    st.slider("Capital budget ($MM)", 10, max(10, int(total_capex / 1e6)), step=5,
+              key="budget_mm")
+with c2:
+    st.slider("Rig-day capacity", 10, max(10, int(total_rig)), step=10, key="rig_cap")
 budget = float(ss["budget_mm"]) * 1e6
 rig_cap = float(ss["rig_cap"])
-st.caption(f"Constraints from the Optimizer page: ${budget/1e6:,.0f}MM budget · "
-           f"{rig_cap:.0f} rig-days (adjust them there).")
+st.caption("These constraints are shared with the Optimizer page — changing them "
+           "here updates both.")
 
 
 @st.cache_data(show_spinner="Re-solving the frontier (12 MILP solves)…")
@@ -64,20 +73,28 @@ with l:
     ff = go.Figure(go.Scatter(
         x=[f["budget"] / 1e6 for f in front],
         y=[f["risked_npv"] / 1e6 for f in front],
+        customdata=[f["n_selected"] for f in front],
         mode="lines+markers", line=dict(color=theme.NAVY),
-        hovertemplate="budget $%{x:,.0f}MM → $%{y:,.1f}MM<extra></extra>"))
+        hovertemplate="budget $%{x:,.0f}MM → $%{y:,.1f}MM "
+                      "(%{customdata} projects)<extra></extra>"))
     ff.add_vline(x=budget / 1e6, line_dash="dash", line_color=theme.GREEN,
                  annotation_text=f"budget ${budget/1e6:,.0f}MM")
     ff.update_layout(xaxis_title="capital budget ($MM)",
                      yaxis_title="optimal risked NPV ($MM)")
     st.plotly_chart(theme.style_fig(ff, height=330, legend=False), width="stretch")
-    theme.source_note("Optimal risked NPV ($MM) re-solved by 0/1 MILP (CBC) at "
-                      "each budget, rig limit fixed; discounting at the deck.")
-    st.caption("The curve flattens — diminishing marginal value of capital. That "
-               "flattening is the picture that sizes (or caps) the budget ask.")
+    theme.source_note(f"Optimal risked NPV ($MM) re-solved by 0/1 MILP (CBC) at each "
+                      f"budget, with the rig limit FIXED at {rig_cap:.0f} rig-days; "
+                      "discounting at the deck.")
+    st.caption("The curve flattens once the binding constraint shifts from capital to "
+               f"the fixed {rig_cap:.0f}-rig-day limit (and the economic projects run "
+               "out) — past that point more budget buys little NPV. Raise the rig limit "
+               "on the Optimizer to see the frontier extend.")
 with r:
     pt.section("Price-Deck Sensitivity", "The program re-optimized at each oil price.")
-    strip = _price_strip(csv_text, DISC, budget, rig_cap)
+    # include the actual deck price so the green "current deck" bar always appears
+    # (a deck of $65 would otherwise fall between the hardcoded $50/60/70/80 grid).
+    strip_prices = tuple(sorted({50.0, 60.0, 70.0, 80.0, round(OIL, 2)}))
+    strip = _price_strip(csv_text, DISC, budget, rig_cap, prices=strip_prices)
     pp = go.Figure(go.Bar(
         x=[f"${s['price']:.0f}" for s in strip],
         y=[s["risked_npv"] / 1e6 for s in strip],
