@@ -24,6 +24,14 @@ pt.masthead("capital", "Optimizer",
 csv_text, source_label, _is_byod = common.resolve_backlog()
 pt.context_bar([("Deck", common.program_deck()), ("Data", source_label),
                 ("Solver", "CBC branch-and-bound (PuLP)")])
+common.page_purpose(
+    "**What this page answers:** which projects should we fund under a fixed "
+    "capital budget AND a fixed rig fleet — and how much better is that slate "
+    "than the ranking most operators use?\n\n"
+    "**Use it to build the funded program:** set budget + rig-days, read the "
+    "funded slate, the quarterly schedule, and the program-level P10/P50/P90. "
+    "The MILP result is provably near-optimal (LP bound shown) and honestly "
+    "framed against the greedy baseline.")
 
 projects = common.parse_backlog(csv_text)
 total_capex = sum(p.capex_usd for p in projects)

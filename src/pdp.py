@@ -1,7 +1,8 @@
 """PDP Screener math — per-well Arps decline fits, remaining EUR, and PV10 for a
 producing-asset (PDP) A&D quick-look.
 
-The ONLY new math in Capital Desk; everything else reuses vendored component code.
+Product-layer math (like its `src/` siblings uplift/afe_costs/afe_status);
+everything else reuses vendored component code.
 Pure functions, no streamlit. Discounting delegates to the suite kernel
 (``afe.econ_core``, re-exported by ``core``) so the screen values cash flows with
 the exact same effective-annual convention (DF(m) = (1+r)^(m/12)) the AFE Copilot
@@ -113,6 +114,29 @@ def template_csv() -> str:
             "WELL-001,2023-01,9500,14200,31\n"
             "WELL-001,2023-02,8800,13100,28\n"
             "WELL-001,2023-03,8300,12400,31\n")
+
+
+def find_well(tidy: pd.DataFrame, query: str) -> str | None:
+    """Resolve a user-typed well reference to a ``well_id`` in a tidy PDP frame.
+
+    Case-insensitive EXACT match on ``well_id`` first, then on ``well_name`` when
+    the source carries one (both bundled sources do). Deterministic: first match
+    in the frame's sort order. Returns None on no match / blank query — callers
+    render an honest empty state, never a guessed well (fuzzy matching could
+    silently chart the wrong well's history under an AFE)."""
+    q = str(query or "").strip().lower()
+    if not q or "well_id" not in tidy.columns:
+        return None
+    ids = tidy["well_id"].astype(str)
+    hit = ids[ids.str.lower() == q]
+    if len(hit):
+        return str(hit.iloc[0])
+    if "well_name" in tidy.columns:
+        names = tidy["well_name"].astype(str)
+        hit = tidy.loc[names.str.lower() == q, "well_id"]
+        if len(hit):
+            return str(hit.iloc[0])
+    return None
 
 
 GOR_TRAILING_MONTHS = 12          # window for the forward GOR (representative of NOW)

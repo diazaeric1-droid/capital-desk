@@ -19,6 +19,13 @@ OIL, NRI, DISC, DECK = common.deck()
 
 pt.masthead("capital", "Backlog",
             "The project inventory — risked per-project economics at the deck.")
+common.page_purpose(
+    "**What this page answers:** what's in the capital project inventory, and "
+    "how much of it is even economic at today's deck?\n\n"
+    "**Use it before the Optimizer:** this is the raw material the program is "
+    "chosen from — per-project risked NPV, IRR, F&D, and Pc at the sidebar "
+    "deck, with the sub-economic tail called out. If a project looks wrong "
+    "here, fix it here (or in your uploaded CSV) before optimizing.")
 
 # ---- source picker (BYOD upload, when present, overrides this) -------------------
 ss = st.session_state

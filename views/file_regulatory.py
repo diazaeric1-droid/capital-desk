@@ -29,6 +29,13 @@ pt.masthead("capital", "Regulatory Filing",
 pt.context_bar([("Deck", DECK),
                 ("Scope", "Draft worksheets — review before filing"),
                 ("Forms", "CO ECMC Form 7 · TX RRC Form W-3")])
+common.page_purpose(
+    "**What this page answers:** how much of a routine regulatory filing can be "
+    "pre-filled from data the product already holds?\n\n"
+    "**Use it to start (not finish) a filing:** it maps a well-month of "
+    "production onto a CO ECMC Form 7 worksheet, or a P&A AFE onto a TX RRC "
+    "W-3 plugging worksheet — a draft for the person who actually files, never "
+    "a certified e-file payload. Fields it can't source honestly say so.")
 
 st.warning("These are **draft field-mapping worksheets**, not certified filings. "
            "Field names track the public forms; reconcile against the current "

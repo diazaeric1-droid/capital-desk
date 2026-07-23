@@ -23,7 +23,10 @@ CONTRACT = {
 # view -> (min KPI metrics, min dataframes): a silent early st.stop() fails here
 VIEWS = {
     "views/authorize_pipeline.py": (4, 3),
-    "views/authorize_draft.py": (8, 2),
+    # draft: the read-only line-item table became an EDITABLE st.data_editor
+    # (PE feedback CD3), which AppTest does not count as a dataframe — the one
+    # remaining st.dataframe is the price-deck strip.
+    "views/authorize_draft.py": (8, 1),
     "views/authorize_variance.py": (4, 1),
     "views/program_backlog.py": (4, 1),
     "views/program_optimizer.py": (5, 2),
@@ -70,6 +73,51 @@ def test_view_renders_clean(view, booted):
     assert len(at.metric) >= min_metrics, f"{view}: missing KPI metrics"
     assert len(at.dataframe) >= min_dfs, f"{view}: missing data tables"
     assert len(at.markdown) > 0, f"{view}: rendered no content at all"
+
+
+def test_every_view_has_page_purpose():
+    """PE feedback CD5: every page carries the top-of-page 'What is this page
+    for?' affordance — a product-wide convention, checked as source text so a
+    dropped call on any single page fails loudly."""
+    for view in VIEWS:
+        src = (ROOT / view).read_text()
+        assert "common.page_purpose(" in src, f"{view} lost its page_purpose call"
+
+
+def test_pipeline_detail_renders_stepper_and_whats_remaining(booted):
+    """PE feedback CD4: the Pipeline Board's AFE Detail shows the status journey
+    and an explicit 'what's remaining' line for the selected AFE."""
+    at = AppTest.from_file(str(ROOT / "views/authorize_pipeline.py"),
+                           default_timeout=600)
+    for k, v in CONTRACT.items():
+        at.session_state[k] = v
+    at.run()
+    _no_exception(at, "pipeline detail")
+    md = " ".join(m.value for m in at.markdown)
+    assert "What's remaining:" in md
+    assert "pt-pill" in md                      # the stepper chips rendered
+    assert "in status" in md                    # current stage carries days-in-status
+
+
+def test_draft_view_renders_trend_empty_state_and_arps_default(booted):
+    """PE feedback CD1/CD2: the default Draft AFE (demo well ED-001H, absent from
+    every production source) renders the HONEST empty state — never invented
+    history — and defaults to the hyperbolic Arps uplift model."""
+    at = AppTest.from_file(str(ROOT / "views/authorize_draft.py"),
+                           default_timeout=600)
+    for k, v in CONTRACT.items():
+        at.session_state[k] = v
+    at.run()
+    _no_exception(at, "draft trend")
+    md = " ".join(m.value for m in at.markdown)
+    assert "No production history found" in md
+    assert at.session_state["d_uplift_model"] == "Hyperbolic (Arps)"
+    # a real well id lights the trend up instead of the empty state
+    at.session_state["d_well_id"] = "well_001"
+    at.run()
+    _no_exception(at, "draft trend well_001")
+    md2 = " ".join(m.value for m in at.markdown)
+    assert "No production history found" not in md2
 
 
 def test_optimizer_view_shows_honest_uplift(booted):

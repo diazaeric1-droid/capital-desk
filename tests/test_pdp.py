@@ -111,6 +111,45 @@ def test_csv_validation_messages(pdp):
         pdp.fit_well(np.arange(4.0), np.array([50.0, 40, 30, 20]), "SHORT")
 
 
+def test_find_well_matches_id_then_name(pdp):
+    """CD1 matcher: case-insensitive EXACT match on well_id, then well_name;
+    no fuzzy guessing (a miss returns None, never the wrong well)."""
+    tidy = pdp.load_pdp_csv(io.StringIO(
+        "well_id,month,oil_bbl,well_name\n"
+        "well_001,2024-01,9000,Reeves 1H\n"
+        "well_001,2024-02,8500,Reeves 1H\n"
+        "05-123-40438,2024-01,4000,Big Sky 2-19H\n"))
+    assert pdp.find_well(tidy, "well_001") == "well_001"
+    assert pdp.find_well(tidy, "WELL_001") == "well_001"          # case-insensitive
+    assert pdp.find_well(tidy, "  Reeves 1H ") == "well_001"      # name, trimmed
+    assert pdp.find_well(tidy, "big sky 2-19h") == "05-123-40438"
+    assert pdp.find_well(tidy, "ED-001H") is None                 # demo AFE id: honest miss
+    assert pdp.find_well(tidy, "well_0") is None                  # prefix ≠ exact
+    assert pdp.find_well(tidy, "") is None
+
+
+def test_find_well_without_name_column(pdp):
+    """Sources without well_name (minimal BYOD) still match on well_id."""
+    tidy = pdp.load_pdp_csv(io.StringIO(
+        "well_id,month,oil_bbl\nW-1,2024-01,900\nW-1,2024-02,850\n"))
+    assert pdp.find_well(tidy, "w-1") == "W-1"
+    assert pdp.find_well(tidy, "nope") is None
+
+
+def test_find_well_on_bundled_sources(pdp, booted):
+    """The suite fleet resolves by id AND registry name; Colorado by API id."""
+    core = booted
+    fleet = pdp.load_pdp_csv(io.StringIO(core.SYNTH_FLEET_CSV.read_text()))
+    assert pdp.find_well(fleet, "well_017") == "well_017"
+    if "well_name" in fleet.columns:
+        name = str(fleet.loc[fleet["well_id"] == "well_017", "well_name"].iloc[0])
+        assert pdp.find_well(fleet, name.upper()) == "well_017"
+    colo = pd.read_csv(core.COLORADO_CSV).rename(columns={"date": "month"})
+    colo_tidy = pdp.load_pdp_csv(io.StringIO(colo.to_csv(index=False)))
+    some_api = str(colo_tidy["well_id"].iloc[0])
+    assert pdp.find_well(colo_tidy, some_api.lower()) == some_api
+
+
 def test_colorado_screen_end_to_end(pdp, booted):
     """All 28 real ECMC wells fit and value at the default deck."""
     core = booted

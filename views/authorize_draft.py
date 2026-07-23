@@ -1,10 +1,13 @@
 """Draft AFE — diagnosis in, decision-ready AFE out.
 
 Manual inputs or a WellDiagnosis JSON (chained from the Production Engineer
-Copilot) become a costed AFE: benchmark cost rollup with the tangible/intangible
-(IDC) split, WI/NRI net economics at the global deck, Monte-Carlo P10/50/90 with
-a tornado, and a markdown + .docx download. Every number is deterministic — the
-LLM narrative alone is BYOK-optional (key in the sidebar).
+Copilot) become a costed AFE: an EDITABLE line-item cost table (add / remove /
+reprice; contingency, IDC split, routing, and economics react live), the well's
+ACTUAL production trend next to the uplift assumption, an exact Arps uplift
+decline (hyperbolic b editable, exponential legacy mode preserved), WI/NRI net
+economics at the global deck, Monte-Carlo P10/50/90 with a tornado, and a
+markdown + .docx download. Every number is deterministic — the LLM narrative
+alone is BYOK-optional (key in the sidebar).
 """
 from __future__ import annotations
 
@@ -13,6 +16,7 @@ import json
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -20,6 +24,7 @@ import streamlit as st
 import core
 import product_theme as pt
 import theme
+from src import afe_costs, pdp, uplift
 from views import common
 
 ss = st.session_state
@@ -27,13 +32,24 @@ OIL = float(ss.get("oil_price", 70.0))
 NRI = float(ss.get("nri", 0.80))
 DISC = float(ss.get("discount", 0.10))
 
+UPLIFT_HYP = "Hyperbolic (Arps)"
+UPLIFT_EXP = "Exponential (legacy)"
+
 pt.masthead("capital", "Draft AFE",
             "Turn a well diagnosis into a costed, routed, economics-backed AFE.")
 pt.context_bar([
     ("Deck", f"${OIL:.0f}/bbl · NRI {NRI:.0%} · {DISC:.1%} disc"),
-    ("Data", "Benchmark cost templates (synthetic Permian)"),
+    ("Data", "Benchmark cost templates (synthetic Permian) — editable below"),
     ("Narrative", "BYOK-optional — all numbers keyless"),
 ])
+common.page_purpose(
+    "**What this page answers:** what will this intervention cost, is it worth "
+    "it at the deck, and who has to sign it?\n\n"
+    "**Use it when** a diagnosis (yours or a PE-Copilot JSON) says a well needs "
+    "a job: pick the intervention, **edit the line-item costs** in the table "
+    "below, set the uplift and its exact decline curve, sanity-check against "
+    "the well's real production trend, then generate the AFE document and "
+    "submit it to the Pipeline Board.")
 
 # ---- diagnosis input --------------------------------------------------------
 pt.section("Diagnosis", "Load an example, upload a WellDiagnosis JSON, or type it in.")
@@ -61,6 +77,7 @@ _DEFAULTS = {
     "d_diagnosis": ("Scale signature with declining intake pressure; treatment "
                     "required before mechanical work."),
     "d_rate": 100.0, "d_decline": 0.6, "d_wi": 1.0,
+    "d_uplift_model": UPLIFT_HYP, "d_b": uplift.DEFAULT_B,
 }
 for _k, _v in _DEFAULTS.items():
     ss.setdefault(_k, _v)
@@ -121,31 +138,186 @@ requested_by = f6.text_input("Requested by", key="d_requested_by")
 diagnosis_text = st.text_area("Primary diagnosis", height=90, key="d_diagnosis")
 g1, g2, g3 = st.columns(3)
 rate = g1.number_input("Incremental uplift (BOPD)", 1.0, 5000.0, step=5.0, key="d_rate")
-decline = g2.number_input("Uplift decline (1/yr)", 0.05, 1.95, step=0.05, key="d_decline")
+decline = g2.number_input("Uplift decline Di (1/yr)", 0.05, 1.95, step=0.05, key="d_decline",
+                          help="Nominal annual decline of the uplift stream — the Di "
+                               "of the Arps curve below (both models share it).")
 wi = g3.number_input("Working interest (WI)", 0.0, 1.0, step=0.05, key="d_wi",
                      help="Operator's share of COST. Revenue share (NRI) and price "
                           "come from the global deck in the sidebar.")
+h1, h2 = st.columns([1.4, 1])
+uplift_model = h1.radio("Uplift decline model", [UPLIFT_HYP, UPLIFT_EXP],
+                        key="d_uplift_model", horizontal=True,
+                        help="How the incremental uplift declines over the 5-yr "
+                             "horizon. Hyperbolic Arps (default) adds the b-factor "
+                             "for the exact curve shape; Exponential (legacy) is "
+                             "the component's original qi·e^(−Di·t) model, kept "
+                             "for continuity.")
+IS_HYP = uplift_model == UPLIFT_HYP
+if IS_HYP:
+    b_val = h2.number_input("Arps b-factor", 0.05, 1.95, step=0.05, key="d_b",
+                            help="Hyperbolic exponent: b→0 is exponential, b=1 "
+                                 "harmonic. Higher b = fatter tail = more late-life "
+                                 "volume at the same qi/Di.")
+else:
+    b_val = 0.0
+    h2.caption("Legacy exponential: qi·e^(−Di·t) — exactly the original model "
+               "(b = 0), for continuity with previously drafted AFEs.")
 
-# ---- cost rollup ------------------------------------------------------------
-pt.section("Cost Rollup", "Benchmark template with the tangible / intangible (IDC) split.")
-rollup = core.afe_cost_db.cost_rollup(intervention)
+# ---- well trend + uplift decline shape (CD1 + CD2) ---------------------------
+pt.section("Well Trend & Uplift Decline",
+           "Sanity-check the economics against the well's ACTUAL production trend "
+           "(left) and see the exact decline shape assumed for the uplift (right).")
+
+months60 = core.econ_core.month_index(uplift.DEFAULT_HORIZON_YEARS)      # 1..60
+uplift_rates = uplift.uplift_monthly_rates(rate, decline, b_val)         # selected model
+alt_b = uplift.DEFAULT_B if not IS_HYP else 0.0
+alt_rates = uplift.uplift_monthly_rates(rate, decline, alt_b)            # comparison
+alt_name = (f"hyperbolic b={uplift.DEFAULT_B:.1f} (comparison)" if not IS_HYP
+            else "exponential (comparison)")
+
+tl, tr = st.columns([1.15, 1])
+with tl:
+    hit = common.find_well_production(well_id)
+    if hit is None:
+        pt.empty_state(
+            f"No production history found for '{well_id}' in the loaded sources.",
+            "Searched: your uploaded monthly CSV (if any), the suite synthetic "
+            "fleet (well_001–well_100, or names like 'Reeves 1H'), and the real "
+            "Colorado ECMC slice (API ids like 05-123-40438). The demo AFE ids "
+            "(ED-001H…) exist in no production source — enter a known well id or "
+            "name to see its trend here.")
+    else:
+        csv_w, src_w, wid = hit
+        fit = None
+        try:
+            t_hist, q_hist, fit, fc_rates = common.fit_one_well(
+                csv_w, wid, pdp.DEFAULT_ECON_LIMIT_BOPD)
+        except ValueError:
+            g_w = common.pdp_tidy(csv_w)
+            g_w = g_w[g_w["well_id"] == wid]
+            t_hist, q_hist = pdp.well_history(g_w)
+        trend = go.Figure()
+        trend.add_trace(go.Scatter(
+            x=t_hist, y=q_hist, mode="markers", name="history",
+            marker=dict(color=theme.BLUE, size=5),
+            hovertemplate="month %{x:.0f}: %{y:.1f} bopd<extra>history</extra>"))
+        n_fc = len(months60)
+        base_pad = np.zeros(n_fc)
+        if fit is not None:
+            base = np.asarray(fc_rates[:n_fc], dtype=float)
+            base_pad[:len(base)] = base
+            t_anchor = fit.t_last_months
+            t_base = t_anchor + np.arange(1, len(base) + 1) - 0.5
+            trend.add_trace(go.Scatter(
+                x=t_base, y=base, mode="lines", name="base forecast (fitted)",
+                line=dict(color=theme.GREY, dash="dash")))
+            base_lbl = f"{fit.model} fit"
+        else:
+            trailing = float(np.mean(q_hist[-6:])) if len(q_hist) else 0.0
+            t_anchor = float(t_hist[-1]) if len(t_hist) else 0.0
+            base_pad[:] = trailing
+            t_base = t_anchor + months60 - 0.5
+            trend.add_trace(go.Scatter(
+                x=t_base, y=base_pad, mode="lines",
+                name="base (trailing 6-mo mean — too little history to fit)",
+                line=dict(color=theme.GREY, dash="dash")))
+            base_lbl = "trailing 6-month mean (< 6 fit points)"
+        t_comb = t_anchor + months60 - 0.5
+        trend.add_trace(go.Scatter(
+            x=t_comb, y=base_pad + np.asarray(uplift_rates, dtype=float),
+            mode="lines", name="base + AFE uplift (assumed)",
+            line=dict(color=theme.GREEN)))
+        trend.add_vline(x=t_anchor, line_dash="dash", line_color=theme.GREY,
+                        annotation_text="job assumed here")
+        trend.update_layout(xaxis_title="months since first production",
+                            yaxis_title="oil rate (bopd)")
+        st.plotly_chart(theme.style_fig(trend, height=320), width="stretch")
+        theme.source_note(
+            f"{wid} — {src_w}. Baseline: {base_lbl} at PDP defaults (3-bopd limit, "
+            "6%/yr Dmin — not the Screen page sliders). The green case adds the "
+            "AFE's ASSUMED uplift on top of the baseline — a sanity-check overlay, "
+            "not a fitted forecast of the job.")
+with tr:
+    shape = go.Figure()
+    shape.add_trace(go.Scatter(
+        x=months60, y=uplift_rates, mode="lines",
+        name=(f"hyperbolic b={b_val:.2f}" if IS_HYP else "exponential (selected)"),
+        line=dict(color=theme.GREEN),
+        hovertemplate="month %{x}: %{y:.1f} bopd<extra></extra>"))
+    shape.add_trace(go.Scatter(
+        x=months60, y=alt_rates, mode="lines", name=alt_name,
+        line=dict(color=theme.GREY, dash="dot")))
+    shape.update_layout(xaxis_title="months after job",
+                        yaxis_title="incremental rate (bopd)")
+    st.plotly_chart(theme.style_fig(shape, height=320), width="stretch")
+    vols = np.asarray(uplift_rates, dtype=float) * core.econ_core.DAYS_PER_MONTH
+    theme.source_note(
+        f"The exact uplift decline the economics integrate: Arps "
+        f"qi/(1+b·Di·t)^(1/b) at qi={rate:.0f} bopd, Di={decline:.2f}/yr"
+        + (f", b={b_val:.2f}" if IS_HYP else " (b=0, exponential)")
+        + f" → first-year add {float(vols[:12].sum()):,.0f} bbl, 5-yr uplift EUR "
+          f"{float(vols.sum()):,.0f} bbl (gross).")
+
+# ---- cost rollup (CD3 — editable line items) --------------------------------
+pt.section("Cost Rollup — Edit the Line Items",
+           "This is where AFE costs are edited: add, remove, or reprice any line "
+           "(double-click a cell; '+' adds a row). Contingency, the tangible/IDC "
+           "split, authority routing, and every economics number below react live.")
+
+# Reseed the contingency % when the intervention changes (same token pattern as
+# the diagnosis preset), so each template starts at its benchmark 10%/15%.
+if ss.get("_cost_token") != intervention:
+    ss["d_conting_pct"] = afe_costs.default_contingency_pct(intervention) * 100.0
+    ss["_cost_token"] = intervention
+
+seed_df = afe_costs.seed_lines(intervention)
+e1, e2 = st.columns([3, 1])
+with e1:
+    # keyed per intervention: switching templates re-seeds the editor; switching
+    # back restores that template's session edits.
+    edited_df = st.data_editor(
+        seed_df, num_rows="dynamic", key=f"d_cost_editor::{intervention}",
+        width="stretch", hide_index=True,
+        column_config={
+            "category": st.column_config.TextColumn("Category", required=True),
+            "description": st.column_config.TextColumn("Description"),
+            "qty": st.column_config.NumberColumn("Qty", min_value=0.0),
+            "unit": st.column_config.TextColumn("Unit"),
+            "unit_cost_usd": st.column_config.NumberColumn(
+                "Unit Cost $", min_value=0.0, format="$%,.0f"),
+            "tangible": st.column_config.CheckboxColumn(
+                "Tangible", help="Capitalized equipment (depreciated) vs. "
+                                 "intangible workover cost (IDC, expensed)."),
+            "vendor": st.column_config.TextColumn("Vendor"),
+        })
+with e2:
+    conting_pct = st.number_input(
+        "Contingency (% of direct)", 0.0, 50.0, step=1.0, key="d_conting_pct",
+        help="Computed on the edited direct cost — reseeds to the benchmark "
+             "(10% / 15%) when the intervention changes.")
+    st.caption("Edits are **session-only** (nothing is stored server-side); "
+               "switching the intervention re-seeds its benchmark template.")
+
+rollup = afe_costs.rollup_from_lines(edited_df, float(conting_pct) / 100.0)
 pt.kpi_row([
-    {"label": "AFE Total (Gross)", "value": f"${rollup['total']:,.0f}"},
+    {"label": "AFE Total (Gross)", "value": f"${rollup['total']:,.0f}",
+     "help": "Edited direct lines + contingency — feeds the economics, the "
+             "Monte-Carlo, and the pipeline submission below."},
     {"label": "Tangible (Capitalized)", "value": f"${rollup['tangible']:,.0f}"},
     {"label": "Intangible (IDC)", "value": f"${rollup['intangible']:,.0f}"},
-    {"label": "Routes To", "value": core.afe_tracker.required_approver(rollup["total"])},
+    {"label": "Routes To", "value": core.afe_tracker.required_approver(rollup["total"]),
+     "help": "Delegation-of-authority routing recomputed from the EDITED total — "
+             "repricing a line can change who must sign."},
 ])
 
-items = core.afe_cost_db.lookup_cost_template(intervention)
-direct = [li for li in items if li.category != "Contingency"]
-contingency = sum(li.total_usd for li in items if li.category == "Contingency")
+cats = list(rollup["by_category"].items())
 wf = go.Figure(go.Waterfall(
     orientation="v",
-    measure=["relative"] * (len(direct) + 1) + ["total"],
-    x=[li.category for li in direct] + ["Contingency", "Total AFE"],
-    y=[li.total_usd for li in direct] + [contingency, 0],
-    text=[f"${li.total_usd:,.0f}" for li in direct]
-         + [f"${contingency:,.0f}", f"${rollup['total']:,.0f}"],
+    measure=["relative"] * (len(cats) + 1) + ["total"],
+    x=[c for c, _ in cats] + ["Contingency", "Total AFE"],
+    y=[v for _, v in cats] + [rollup["contingency"], 0],
+    text=[f"${v:,.0f}" for _, v in cats]
+         + [f"${rollup['contingency']:,.0f}", f"${rollup['total']:,.0f}"],
     textposition="outside",
     connector={"line": {"color": theme.GRID}},
     increasing={"marker": {"color": theme.BLUE}},
@@ -154,16 +326,9 @@ wf = go.Figure(go.Waterfall(
     hovertemplate="%{x}: $%{y:,.0f}<extra></extra>"))
 wf.update_layout(yaxis_title="USD")
 st.plotly_chart(theme.style_fig(wf, height=340, legend=False), width="stretch")
-theme.source_note("Benchmark cost template for the selected intervention; bars in "
-                  "USD building direct line items → contingency → total AFE.")
-with st.expander("Line-Item Detail"):
-    st.dataframe(pd.DataFrame(
-        [{"Category": x.category, "Description": x.description, "Qty": x.qty,
-          "Unit": x.unit, "Unit Cost $": x.unit_cost_usd, "Total $": x.total_usd,
-          "Vendor": x.vendor or "TBD", "Class": x.cost_class} for x in items]),
-        width="stretch", hide_index=True,
-        column_config={"Unit Cost $": st.column_config.NumberColumn(format="$%,.0f"),
-                       "Total $": st.column_config.NumberColumn(format="$%,.0f")})
+theme.source_note("Bars in USD from the EDITED line items above (grouped by "
+                  "category) → contingency → total AFE. Seeded from the benchmark "
+                  "template for the selected intervention.")
 
 # ---- net economics at the deck -----------------------------------------------
 SEV = float(ss.get("severance_pct", 7.5)) / 100.0     # deck severance (shared with Screen)
@@ -175,18 +340,28 @@ def _net_npv_after_severance(net_npv: float, net_cost: float) -> float:
     return common.net_npv_gross_wellhead_severance(net_npv, net_cost, OIL, SEV)
 
 
+_model_desc = (f"Arps hyperbolic (b={b_val:.2f})" if IS_HYP else "exponential (legacy)")
 pt.section("Net Economics",
            f"WI {wi:.0%} of cost · NRI {NRI:.0%} of revenue · ${OIL:.0f}/bbl − "
-           f"$12/bbl LOE · {SEV:.1%} severance · {DISC:.1%} effective-annual discount.")
+           f"$12/bbl LOE · {SEV:.1%} severance · {DISC:.1%} effective-annual discount "
+           f"· uplift model: {_model_desc}, 5-yr horizon.")
+st.caption(f"Cost basis: the **editable line items above** — AFE total "
+           f"${rollup['total']:,.0f}.")
 if intervention == "p_and_a":
     pt.empty_state("P&A is a cost-only job — production economics do not apply.",
                    "Justified against remaining liability, plugging-bond release, "
                    "and avoided idle-well carrying cost.")
     econ = None
 else:
-    econ = core.draft_economics(rollup["total"], rate, uplift_decline_per_yr=decline,
-                                realized_price_per_bbl=OIL, working_interest=wi,
-                                net_revenue_interest=NRI, discount_rate=DISC)
+    if IS_HYP:
+        econ = uplift.uplift_economics(
+            rollup["total"], rate, uplift_decline_per_yr=decline, b=b_val,
+            realized_price_per_bbl=OIL, working_interest=wi,
+            net_revenue_interest=NRI, discount_rate=DISC)
+    else:
+        econ = core.draft_economics(rollup["total"], rate, uplift_decline_per_yr=decline,
+                                    realized_price_per_bbl=OIL, working_interest=wi,
+                                    net_revenue_interest=NRI, discount_rate=DISC)
     net_npv_sev = _net_npv_after_severance(econ.net_npv_10pct_usd,
                                            econ.net_cost_to_operator_usd)
     pt.kpi_row([
@@ -199,9 +374,14 @@ else:
         {"label": "First-Year Add (gross)", "value": f"{econ.incremental_first_year_bbl:,.0f} bbl",
          "help": "Gross incremental oil — not reduced by NRI."},
     ])
-    deck_rows = core.afe_economics.price_sensitivity(
-        rollup["total"], rate, uplift_decline_per_yr=decline,
-        working_interest=wi, net_revenue_interest=NRI, discount_rate=DISC)
+    if IS_HYP:
+        deck_rows = uplift.price_sensitivity(
+            rollup["total"], rate, uplift_decline_per_yr=decline, b=b_val,
+            working_interest=wi, net_revenue_interest=NRI, discount_rate=DISC)
+    else:
+        deck_rows = core.afe_economics.price_sensitivity(
+            rollup["total"], rate, uplift_decline_per_yr=decline,
+            working_interest=wi, net_revenue_interest=NRI, discount_rate=DISC)
     deck_df = pd.DataFrame(deck_rows)
     net_cost = econ.net_cost_to_operator_usd
     deck_df = pd.DataFrame({
@@ -212,28 +392,39 @@ else:
         "Payout (mo)": deck_df["payout_months"].map(
             lambda v: f"{v:.0f}" if v != float("inf") else "—")})
     st.dataframe(deck_df, width="stretch", hide_index=True)
-    theme.source_note(f"Price-deck sensitivity: NPV at a fixed uplift across a "
-                      f"realized-price strip; WI/NRI, {SEV:.1%} severance, and discount "
-                      "held at the deck.")
+    theme.source_note(f"Price-deck sensitivity: NPV at a fixed uplift ({_model_desc}) "
+                      f"across a realized-price strip; WI/NRI, {SEV:.1%} severance, "
+                      "and discount held at the deck.")
 
 # ---- Monte-Carlo --------------------------------------------------------------
 pt.section("Probabilistic Economics — Gross NPV",
-           "10,000 trials over uplift (±30%), decline (±0.15 abs), and price (~$12 sd). "
-           "These are GROSS NPV (before WI/NRI), so they bracket the Gross NPV above — "
-           "not the Net-to-Operator figure.")
+           "10,000 trials over uplift (±30%), decline (±0.15 abs), and price (~$12 sd) "
+           f"around the {_model_desc} uplift stream. These are GROSS NPV (before "
+           "WI/NRI), so they bracket the Gross NPV above — not the Net-to-Operator "
+           "figure.")
 if intervention == "p_and_a":
     st.caption("Not applicable to a cost-only job.")
 elif st.button("Run Monte-Carlo NPV"):
-    mc = core.afe_economics.simulate_economics(
-        treatment_cost_usd=rollup["total"], incremental_rate_bopd=rate,
-        uplift_decline_per_yr=decline, realized_price_per_bbl=OIL,
-        discount_rate=DISC)
+    if IS_HYP:
+        mc = uplift.simulate_uplift_economics(
+            treatment_cost_usd=rollup["total"], incremental_rate_bopd=rate,
+            uplift_decline_per_yr=decline, b=b_val,
+            realized_price_per_bbl=OIL, discount_rate=DISC)
+    else:
+        mc = core.afe_economics.simulate_economics(
+            treatment_cost_usd=rollup["total"], incremental_rate_bopd=rate,
+            uplift_decline_per_yr=decline, realized_price_per_bbl=OIL,
+            discount_rate=DISC)
     pt.kpi_row([
         {"label": "P10 Gross NPV (Downside)", "value": f"${mc.npv_p10_usd/1e6:,.2f}MM"},
         {"label": "P50 Gross NPV (Median)", "value": f"${mc.npv_p50_usd/1e6:,.2f}MM"},
         {"label": "P90 Gross NPV (Upside)", "value": f"${mc.npv_p90_usd/1e6:,.2f}MM"},
         {"label": "P(Payout < 24 mo)", "value": f"{mc.probability_of_payout*100:.0f}%"},
     ])
+    if IS_HYP:
+        st.caption(f"Trials sample uplift rate, Di, and price around the Arps "
+                   f"stream with **b = {b_val:.2f} held fixed** (b itself is not "
+                   "sampled — it is a model choice, not a measured uncertainty).")
     items_t = sorted(mc.tornado.items(), key=lambda kv: kv[1]["swing"])
     labels = [k.replace("_", " ") for k, _ in items_t]
     lows = [v["low"] for _, v in items_t]
@@ -264,6 +455,11 @@ diag_dict = {
     "expected_uplift_decline_per_yr": float(decline),
     "requested_by": requested_by,
 }
+# On-page assumptions the document schema doesn't carry (the vendored AFEDiagnosis
+# has no b / edited-cost fields) — snapshotted so the staleness warning fires when
+# they change after generation, and appended to the markdown as an addendum.
+extras_now = {"uplift_model": uplift_model, "b": float(b_val),
+              "afe_total": float(rollup["total"])}
 if st.button("Generate AFE", type="primary"):
     problems = core.afe_models.AFEDiagnosis(**diag_dict).validate()
     if problems:
@@ -282,22 +478,40 @@ if st.button("Generate AFE", type="primary"):
         if markdown is None:
             markdown = core.afe_markdown(diag_dict, working_interest=wi,
                                          net_revenue_interest=NRI, realized_price=OIL)
-        ss["_afe_markdown"] = markdown
+        # Product-layer addendum: the vendored document body prices the BENCHMARK
+        # template with the EXPONENTIAL model (its schema has no b / edited costs),
+        # so the on-page assumptions are disclosed rather than silently divergent.
+        addendum = ["", "---",
+                    "*Capital Desk addendum — on-page assumptions at generation:*",
+                    ("*Uplift decline model: hyperbolic Arps "
+                     f"(Di = {decline:.2f}/yr, b = {b_val:.2f}) — note the document "
+                     "body's economics above use the component's exponential model.*"
+                     if IS_HYP else
+                     f"*Uplift decline model: exponential (Di = {decline:.2f}/yr).*")]
+        template_total = core.afe_cost_db.cost_rollup(intervention)["total"]
+        if abs(rollup["total"] - template_total) > 0.5:
+            addendum.append(
+                f"*AFE total per the edited line items: ${rollup['total']:,.0f} "
+                "(the cost table above is the unedited benchmark template).*")
+        ss["_afe_markdown"] = markdown + "\n" + "\n".join(addendum)
         # Snapshot the EXACT inputs the markdown was generated from, so the preview,
         # the .docx cover, the filename, and submit-to-pipeline all describe ONE AFE
         # even if the form is edited afterwards (the preview must never silently
         # disagree with the file you download or the pipeline row you create).
         ss["_afe_snapshot"] = dict(diag_dict)
+        ss["_afe_extras"] = dict(extras_now)
         ss["_afe_pending"] = {"well_id": well_id, "intervention": intervention,
                               "total_cost_usd": rollup["total"],
                               "requested_by": requested_by}
 
 if ss.get("_afe_markdown"):
     snap = ss.get("_afe_snapshot") or diag_dict
-    if snap != diag_dict:
-        st.warning("Inputs changed since this AFE was generated — the preview and "
-                   "downloads below reflect the **generated** version. Click "
-                   "**Generate AFE** again to refresh them to the current form.")
+    snap_extras = ss.get("_afe_extras") or extras_now
+    if snap != diag_dict or snap_extras != extras_now:
+        st.warning("Inputs changed since this AFE was generated (form, cost lines, "
+                   "or decline model) — the preview and downloads below reflect the "
+                   "**generated** version. Click **Generate AFE** again to refresh "
+                   "them to the current form.")
     snap_well = snap.get("well_id", well_id)
     snap_int = snap.get("intervention", intervention)
     with st.expander("AFE Preview", expanded=True):
@@ -335,4 +549,4 @@ if ss.get("_afe_markdown"):
         ss["_afe_cache_token"] = ss.get("_afe_cache_token", 0) + 1
         st.success(f"{afe_no} added to the pipeline as draft — see the Pipeline Board.")
 
-theme.references(["npv", "monte_carlo"])
+theme.references(["arps", "npv", "monte_carlo"])

@@ -2,6 +2,8 @@
 
 Condensed port of the AFE Copilot demo's Overview + per-AFE drill-down onto one
 board backed by the product-local SQLite tracker (seeded on first run; gitignored).
+The per-AFE detail panel renders the full status journey as a stepper with an
+explicit "what's remaining to get this approved" line (PE feedback CD4).
 """
 from __future__ import annotations
 
@@ -11,6 +13,7 @@ import streamlit as st
 import core
 import product_theme as pt
 import theme
+from src import afe_status
 from views import common
 
 ss = st.session_state
@@ -40,6 +43,15 @@ pt.context_bar([
     ("Data", "Demo tracker (SQLite, product-local)"),
     ("Scope", "In-flight + approved AFEs (not yet executed)"),
 ])
+common.page_purpose(
+    "**What this page answers:** where does every in-flight AFE stand, whose "
+    "sign-off does it still need, and where is it stuck?\n\n"
+    "**Use it to run the AFE review:** the board ranks the slate (Net NPV is a "
+    "type-typical ranking basis), the authority ladder shows the $-routed "
+    "sign-off tiers, and the **AFE Detail** panel below shows one AFE's full "
+    "journey — a stepper of every stage, days-in-status, and exactly what's "
+    "remaining to get it approved. Advancing an AFE to *executed* sends its "
+    "actuals to the Variance page.")
 
 
 @st.cache_data(show_spinner=False)
@@ -139,18 +151,56 @@ ladder = pd.DataFrame(
      for limit, role in core.afe_tracker.AUTHORITY_LIMITS])
 st.dataframe(ladder, width="stretch", hide_index=True)
 
-pt.section("AFE Lifecycle",
-           "Advance an AFE through review → approval → execution. Executing it "
-           "generates closed-out actuals and surfaces it on the Variance page — "
-           "closing the detect → authorize → reconcile loop in-product.")
+pt.section("AFE Detail — Journey, What's Remaining, Audit Trail",
+           "Pick an AFE to see its full status journey, exactly what's still needed "
+           "to get it approved, and its immutable event log — then advance it from "
+           "here. Executing an AFE generates closed-out actuals on the Variance "
+           "page, closing the detect → authorize → reconcile loop in-product.")
 order = list(core.afe_tracker.STATUS_ORDER)
-adv = st.selectbox("AFE to advance", sorted(df["afe_number"]), key="adv_afe")
-row = df[df["afe_number"] == adv].iloc[0]
+sel = st.selectbox("AFE", sorted(df["afe_number"]), key="board_afe")
+row = df[df["afe_number"] == sel].iloc[0]
 cur = str(row["status"])
+approver = str(row["required_approver"])
+days_in = int(row["days_in_status"])
+
+# --- status stepper: the tracker's REAL machine (draft → … → executed; 'rejected'
+# is a terminal off-path branch — never an invented stage) --------------------------
+chips = []
+for stage, state in afe_status.stage_states(cur, order):
+    label = stage.replace("_", " ")
+    if state == afe_status.CURRENT:
+        chips.append(pt.pill(f"{label} · {days_in}d in status", "info"))
+    elif state == afe_status.DONE:
+        chips.append(pt.pill(f"✓ {label}", "ok"))
+    else:
+        chips.append(pt.pill(label, "muted"))
+stepper = " → ".join(chips)
+if not afe_status.is_on_path(cur, order):
+    stepper += " &nbsp; " + pt.pill(f"{cur.replace('_', ' ')} — terminal", "bad")
+st.markdown(stepper, unsafe_allow_html=True)
+st.markdown(f"**What's remaining:** {afe_status.whats_remaining(cur, approver)}",
+            unsafe_allow_html=True)
+st.caption(f"{sel} · {row['well_id']} · {str(row['intervention']).replace('_', ' ')} "
+           f"· ${row['total_cost_usd']:,.0f} routes to **{approver}** · open "
+           f"{int(row['days_open'])}d total · bottleneck risk {row['bottleneck_risk']}.")
+
+ev = _events(sel, token)
+durations = afe_status.stage_durations(ev)
+if durations:
+    bits = []
+    for stage, d in durations.items():
+        sla = core.afe_tracker.STAGE_SLA_DAYS.get(stage)
+        bits.append(f"{stage.replace('_', ' ')}: {d:.1f}d"
+                    + (f" (SLA {sla}d)" if sla else ""))
+    st.caption("Realized days per completed stage — " + " · ".join(bits))
+else:
+    st.caption("No completed stages logged yet — realized per-stage days (vs. the "
+               "stage SLAs) appear once this AFE advances.")
+
 lc1, lc2 = st.columns([1, 2])
 if cur == "executed":
     lc1.success("Executed")
-    live = adv in ss.get("live_actuals", {})
+    live = sel in ss.get("live_actuals", {})
     lc2.caption("Executed this session — its actuals are on the Variance page."
                 if live else "Already executed (pre-seeded). The Variance page shows a "
                 "separate set of closed-out actuals; execute an in-flight AFE here to "
@@ -167,11 +217,11 @@ else:
     if lc1.button(f"Advance → {nxt.replace('_', ' ')}"):
         try:
             tracker = core.get_tracker()
-            tracker.advance(adv, nxt, note="Advanced via Pipeline Board")
+            tracker.advance(sel, nxt, note="Advanced via Pipeline Board")
             if nxt == "executed":
                 ss.setdefault("live_actuals", {})
-                ss["live_actuals"][adv] = common.generate_afe_actuals(
-                    adv, str(row["intervention"]))
+                ss["live_actuals"][sel] = common.generate_afe_actuals(
+                    sel, str(row["intervention"]))
             ss["_afe_cache_token"] = ss.get("_afe_cache_token", 0) + 1
             st.rerun()
         except Exception as exc:  # noqa: BLE001 — surface, never crash the board
@@ -182,9 +232,8 @@ if ss.get("live_actuals"):
     st.caption("Executed this session (now on the Variance page): "
                + ", ".join(sorted(ss["live_actuals"])))
 
-pt.section("Audit Trail", "Immutable status-change log — appended, never overwritten.")
-sel = st.selectbox("AFE", sorted(df["afe_number"]), key="board_afe")
-ev = _events(sel, token)
+st.markdown("**Audit trail** — immutable status-change log, appended, never "
+            "overwritten:")
 if ev.empty:
     st.caption("No status-change events recorded for this AFE.")
 else:

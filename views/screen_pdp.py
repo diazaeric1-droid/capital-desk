@@ -25,6 +25,14 @@ ss = st.session_state
 
 pt.masthead("capital", "PDP Screener",
             "Decline-fit, remaining EUR, and PV10 per well — the deal quick-look.")
+common.page_purpose(
+    "**What this page answers:** what is a producing (PDP) well package worth, "
+    "and does the seller's asking price come close to being covered by the "
+    "producing base alone?\n\n"
+    "**Use it as the A&D quick-look:** load a deal's monthly production (or the "
+    "bundled fleets), get per-well decline fits, remaining EUR, and PV10 at the "
+    "deck, plus $/flowing-BOE vs. a typical band. It screens whether a deal is "
+    "worth real evaluation — it is not a reserves report.")
 
 # ---- source + assumptions -----------------------------------------------------
 # Default = the suite-shared 100-well synthetic fleet (same well identities as

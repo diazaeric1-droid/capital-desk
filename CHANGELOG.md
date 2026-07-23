@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.5.0] — 2026-07-23
+
+PE field-feedback round 1 — a practicing petroleum engineer reviewed the product;
+his five findings (CD1–CD5) are this release. New math is product-layer pure
+functions (`src/`), vendored `apps/` untouched.
+
+### Added
+- **CD1 — Well trend on Draft AFE.** A "Well Trend & Uplift Decline" panel
+  resolves the AFE's well id/name against the available production sources (BYOD
+  upload → suite synthetic fleet → real Colorado ECMC; `src/pdp.py::find_well`,
+  case-insensitive exact match — never fuzzy) and charts the well's ACTUAL
+  history with a default-parameter baseline fit and the AFE's assumed uplift
+  overlaid ("job assumed here"), so the economics are sanity-checked against the
+  real trend. Wells with <6 fit points fall back to a trailing-6-month-mean
+  baseline; wells absent from every source get an honest empty state (the demo
+  ED-xxxH ids have no production source, and the page says so).
+- **CD2 — Exact Arps uplift decline.** New `src/uplift.py`: the incremental
+  uplift now declines on a full Arps curve — mode selector **Hyperbolic (Arps)**
+  (qi/Di/b editable, default b=1.0, DEFAULT) vs **Exponential (legacy)** (the
+  component's original model, kept for continuity) — with the curve PLOTTED so
+  the decline shape is visible, and NPV/payout/price-strip integrated through the
+  same `econ_core` kernel (one discounting convention; at b=0 the new path is
+  bit-identical to the vendored `afe.economics`, pinned by test). The Monte-Carlo
+  runs on the SELECTED model (`simulate_uplift_economics`, seeded-identical to
+  the vendored MC at b=0; b held fixed across trials — a model choice, not a
+  sampled uncertainty). The AFE document gains a product addendum disclosing the
+  on-page model/b/edited-total (the vendored document schema carries neither).
+- **CD3 — Editable AFE cost line items.** The Draft AFE "Cost Rollup" is no
+  longer a read-only template in an expander: a top-level **st.data_editor**
+  (add/remove/reprice lines, tangible/IDC checkbox) with a contingency-% input
+  that reseeds per intervention. New `src/afe_costs.py` re-rolls direct /
+  contingency / total / IDC split from the EDITED lines (exactly reproducing
+  `cost_db.cost_rollup` at the unedited seed — pinned for all 8 interventions),
+  and the rollup, waterfall, authority routing, economics, Monte-Carlo, and
+  pipeline submission all read the edited numbers live. Edits are session-only
+  (disclosed in-page); garbage cells (negatives/NaN) are clamped so a typo can
+  never produce a negative AFE total.
+- **CD4 — Pipeline Board AFE Detail.** The two disjoint "AFE Lifecycle" /
+  "Audit Trail" selectors merged into ONE per-AFE panel: a **status stepper**
+  over the tracker's real machine (draft → engineering review → finance review →
+  approved → executed; `rejected` rendered as a terminal off-path chip — no
+  invented "closed-out" stage), days-in-status on the current chip, an explicit
+  **"What's remaining"** line naming the $-routed approver still required
+  (`src/afe_status.py`), realized days-per-completed-stage vs the stage SLAs from
+  the event log, the advance button, and the audit trail — all for one selected
+  AFE. The 0.4.1 rejected-AFE guard is preserved (pinned by test).
+- **CD5 — "What is this page for?" affordance.** Every page now opens with a
+  consistent ℹ️ popover (`views/common.py::page_purpose`) explaining in plain PE
+  language what question the page answers and when to use it — Frontier &
+  Sensitivity spelled out per the feedback (frontier = the budget argument;
+  sensitivity = does the slate survive a $50–60 deck). Kept product-local
+  (NOT in the vendored `product_theme.py`); the identical helper + copy pattern
+  is drop-in portable to Operations Center / Engineering Workbench in their own
+  repos.
+
+### Tests
+- `tests/test_uplift.py` (7): b=0 bit-parity vs the component (deterministic +
+  seeded MC + price strip), hyperbolic dominance, hand-checked PV, one-kernel
+  check. `tests/test_afe_costs.py` (5): seed-state parity for all interventions,
+  edit flows, authority-tier flip across $250k, editor-garbage clamps.
+  `tests/test_afe_status.py` (5): stepper states for every status, rejected/
+  unknown never raise, "what's remaining" names the gate, event-log durations.
+  `find_well` matcher tests in `tests/test_pdp.py`; AppTest coverage for the
+  stepper/"What's remaining", the honest trend empty state + Arps default, and a
+  source-text check that every view carries `page_purpose`. 71 tests pass.
+
 ## [0.4.4] — 2026-06-15
 
 ### Fixed

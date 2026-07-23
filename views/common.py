@@ -27,6 +27,17 @@ BACKLOG_TEMPLATE = (",".join(core.capital_projects.REQUIRED_CSV_COLUMNS) + "\n"
                     "P001,Well-001,new_drill,Midland-S,9000000,800,1.4,0.9,12,0.75,0.9,30,1\n")
 
 
+def page_purpose(body_md: str) -> None:
+    """Top-of-page "ℹ️ What is this page for?" affordance — PE feedback: the
+    per-chart descriptions were praised, but some pages' PURPOSE (what question
+    they answer, when to reach for them) wasn't obvious. Every view calls this
+    once, right under the masthead/context bar, with plain-PE language. Kept in
+    views/common (product-local) — product_theme.py is a vendored presentation
+    layer shared with the sibling products and must not drift from here."""
+    with st.popover("ℹ️ What is this page for?"):
+        st.markdown(body_md)
+
+
 def deck() -> tuple[float, float, float, str]:
     """(oil_price, nri, discount, context-bar label) from the global sidebar deck."""
     ss = st.session_state
@@ -330,6 +341,36 @@ def screen_table(csv_text: str, price: float, loe: float, nri: float,
 def pdp_tidy(csv_text: str) -> pd.DataFrame:
     from src import pdp
     return pdp.load_pdp_csv(io.StringIO(csv_text))
+
+
+def find_well_production(query: str) -> tuple[str, str, str] | None:
+    """Resolve a Draft-AFE well id / name to production history: returns
+    ``(csv_text, source_label, matched_well_id)`` from the FIRST source that
+    knows the well — BYOD upload (this session), then the suite synthetic fleet,
+    then the real Colorado ECMC slice — or None when no source does (the Draft
+    AFE page renders an honest empty state, never fabricated history).
+
+    Matching is case-insensitive exact on well_id then well_name
+    (``src.pdp.find_well``); the parsed tidy frames are cached on the CSV text
+    (``pdp_tidy``), so the lookup is a vectorized compare per rerun, not a
+    re-parse of 4,000+ rows."""
+    from src import pdp
+    q = str(query or "").strip()
+    if not q:
+        return None
+    sources: list[tuple[str, str]] = []
+    if st.session_state.get("pdp_csv_text"):
+        sources.append((st.session_state["pdp_csv_text"], PDP_BYOD_LABEL))
+    sources.append((synth_fleet_csv_text(), PDP_SYNTH_LABEL))
+    sources.append((colorado_csv_text(), PDP_REAL_LABEL))
+    for csv_text, label in sources:
+        try:
+            wid = pdp.find_well(pdp_tidy(csv_text), q)
+        except ValueError:
+            continue          # unparseable BYOD text — skip it, never crash the page
+        if wid:
+            return csv_text, label, wid
+    return None
 
 
 @st.cache_data(show_spinner=False)

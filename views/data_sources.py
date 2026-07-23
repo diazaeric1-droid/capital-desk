@@ -30,6 +30,13 @@ pt.context_bar([
     ("Backlog", _backlog_lbl),
     ("Production", _prod_lbl),
 ])
+common.page_purpose(
+    "**What this page answers:** which numbers in this product come from real "
+    "public data, which are modeled — and how do I run the product on MY data?\n\n"
+    "**Use it to judge provenance and to load your own:** every dataset is "
+    "listed with its source and badge, and the three upload contracts "
+    "(WellDiagnosis JSON, backlog CSV, PDP monthly CSV) are documented with "
+    "templates. Nothing you upload is stored server-side.")
 st.caption(f"Component engines: AFE Copilot **v{core.AFE_VERSION}** · Capital "
            f"Optimizer **v{core.CAPITAL_VERSION}** · PDP Screener + Regulatory "
            "(product-native). The product version is in the page header.")

@@ -28,6 +28,14 @@ pt.context_bar([
     ("Data", f"Demo closed-out actuals (synthetic){f' + {n_live} executed live' if n_live else ''}"),
     ("Policy", f"Supplement above +{core.afe_variance.SUPPLEMENT_THRESHOLD_PCT:.0f}% overrun"),
 ])
+common.page_purpose(
+    "**What this page answers:** did closed-out jobs actually cost what their "
+    "AFE said — and which cost category is blowing out?\n\n"
+    "**Use it after execution:** the close-out step of the AFE loop. It ranks "
+    "the worst-offender category by absolute $ (unbudgeted lines included, "
+    "never hidden) and flags any AFE whose overrun crosses the "
+    f"+{core.afe_variance.SUPPLEMENT_THRESHOLD_PCT:.0f}% policy line where a "
+    "supplemental AFE is required.")
 if n_live:
     st.info(f"Including {n_live} AFE(s) you executed on the Pipeline Board this session "
             "— the detect → authorize → reconcile loop, closed in-product.")

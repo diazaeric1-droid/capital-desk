@@ -20,6 +20,13 @@ pt.masthead("capital", "Methods & Limitations",
 pt.context_bar([("Deck", DECK),
                 ("Engines", f"AFE v{core.AFE_VERSION} · Capital v{core.CAPITAL_VERSION}"),
                 ("Stance", "Judge the method — the data is illustrative")])
+common.page_purpose(
+    "**What this page answers:** what assumptions and conventions sit under "
+    "every number in the product, and where are the known edges?\n\n"
+    "**Use it before trusting a number:** this is the model card — real vs. "
+    "synthetic data per surface, the single discounting convention, and every "
+    "named limitation. If a result surprises you, the explanation is probably "
+    "here.")
 
 st.markdown(
     "**How to read this product.** The petroleum-engineering math is real and "
@@ -110,13 +117,35 @@ st.markdown(
     "rate, capex ~$0.9–2.4MM, Pc ~0.62–0.85 — the load-bearing numbers a reviewer should "
     "interrogate.")
 
-pt.section("AFE & Variance — limitations", "")
+pt.section("AFE & Variance — method & limitations", "")
 st.markdown(
     "- Cost templates are **synthetic Permian benchmarks**; the tangible/intangible "
-    "(IDC) split and authority-routing thresholds are illustrative.\n"
+    "(IDC) split and authority-routing thresholds are illustrative. On Draft AFE the "
+    "line items are **fully editable** (add/remove/reprice; contingency and routing "
+    "re-roll from the edits); **edited lines are session-only** — the tracker stores "
+    "only the resulting total, and switching intervention re-seeds the benchmark.\n"
+    "- The Draft-AFE **uplift decline is an exact Arps curve**: hyperbolic (qi, Di, "
+    "b editable — the default) or the legacy exponential (b = 0), integrated over a "
+    "**5-year horizon** through the same `econ_core` discounting kernel as "
+    "everything else. At b = 0 the hyperbolic path is bit-identical to the legacy "
+    "exponential model (pinned by a test). The uplift b is a **model choice, not a "
+    "fitted parameter** — the Monte-Carlo samples rate/Di/price and holds b fixed.\n"
+    "- The Draft-AFE **Well Trend chart** overlays the ASSUMED uplift on the well's "
+    "actual history (matched by well id/name against the BYOD upload, the synthetic "
+    "fleet, then the Colorado slice; baseline fit at PDP defaults). It is a "
+    "sanity-check, not a fitted job forecast; wells absent from every source get an "
+    "honest empty state (the demo ED-xxxH ids have no production source).\n"
+    "- The generated **AFE document body prices the benchmark template with the "
+    "exponential model** (the vendored schema carries no b / edited costs); a "
+    "product addendum on the document discloses the on-page model, b, and edited "
+    "total whenever they differ.\n"
     "- The Pipeline Board's **Net NPV uses a per-intervention type-typical uplift** "
     "(ESP swap 150 bopd, scale 60, …) — a ranking basis, NOT each well's real forecast "
     "(that lives in the well's diagnosis on Draft AFE).\n"
+    "- The Pipeline Board's **status stepper shows the tracker's real machine** "
+    "(draft → engineering review → finance review → approved → executed; 'rejected' "
+    "is a terminal off-path branch). There is no separate 'closed-out' stage — "
+    "close-out reconciliation is the Variance page.\n"
     "- The Draft-AFE **Monte-Carlo is GROSS NPV** (before WI/NRI), labeled as such.\n"
     "- Variance runs on demo closed-out actuals plus any AFE you execute live this "
     "session; **live actuals are session-only** and reset on reload.")

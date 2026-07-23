@@ -11,10 +11,13 @@ narrative and nothing else.
 
 ## Modules
 
+Every page opens with an ℹ️ **"What is this page for?"** popover — plain-PE
+language on what question the page answers and when to use it.
+
 | Section | Page | What it does |
 |---|---|---|
-| **Authorize** | Pipeline Board | Every in-flight AFE in a SQLite tracker: status, days-in-status, delegation-of-authority routing ($ → required approver), immutable audit trail, >10% overrun supplement flags |
-| | Draft AFE | Manual inputs **or** a WellDiagnosis JSON → benchmark cost rollup with the tangible/intangible (IDC) split, WI/NRI net economics at the deck, Monte-Carlo P10/50/90 + tornado, markdown + .docx export, submit-to-pipeline |
+| **Authorize** | Pipeline Board | Every in-flight AFE in a SQLite tracker: status, days-in-status, delegation-of-authority routing ($ → required approver), >10% overrun supplement flags — and a per-AFE **status stepper** (draft → … → executed) with an explicit **"what's remaining to get this approved"** line, realized days-per-stage vs SLA, and the immutable audit trail |
+| | Draft AFE | Manual inputs **or** a WellDiagnosis JSON → an **editable line-item cost table** (add/remove/reprice; contingency, IDC split, routing, and economics react live), the well's **actual production trend vs. the uplift assumption** (honest empty state when no source knows the well), an **exact Arps uplift decline** (hyperbolic b editable, exponential legacy mode preserved, curve plotted), WI/NRI net economics at the deck, Monte-Carlo P10/50/90 + tornado on the selected model, markdown + .docx export, submit-to-pipeline |
 | | Variance | Actual vs. AFE on closed-out jobs — worst offender by absolute $ (unbudgeted lines never hidden), supplemental-AFE policy flags |
 | **Program** | Backlog | The realistic 45-project inventory (13/45 sub-economic at the $70 deck — deliberately), a **Colorado refrac backlog derived from real PDP wells**, or a bring-your-own backlog CSV |
 | | Optimizer | Exact 0/1 MILP (CBC) vs. the greedy baseline at the same budget + rig-day limits, LP-relaxation optimality bound, quarterly schedule, **and a program-level Monte-Carlo (P10/P50/P90, P(loss)) over price + dry-hole risk** |
@@ -44,14 +47,18 @@ runs in **one Python process** — no subprocesses, no per-app environments, one
 `pip install`. See `VENDORING.md` for the exact mirror record.
 
 ```
-app.py            product shell: global price deck + st.navigation
-core.py           alias loader + bootstrap + headless API (no streamlit import)
-src/pdp.py        the ONLY new math: PDP screener (pure functions)
-views/            one module per page (presentation only)
-apps/             byte-identical vendored components (read-only)
-data/synthetic/   suite-shared 100-well fleet as monthly oil (committed, seeded)
-data/real/        real Colorado ECMC production (mirrored, reproducible)
-data/state/       runtime artifacts (tracker DB) — gitignored, self-seeding
+app.py             product shell: global price deck + st.navigation
+core.py            alias loader + bootstrap + headless API (no streamlit import)
+src/pdp.py         PDP screener math + well-id/name matcher (pure functions)
+src/uplift.py      exact-Arps uplift economics + seeded MC for Draft AFE (pure)
+src/afe_costs.py   editable AFE cost-line rollup (pure; mirrors cost_db exactly)
+src/afe_status.py  AFE status-journey helpers for the Pipeline Board stepper
+src/regulatory.py  Form 7 / W-3 draft-worksheet field mapping
+views/             one module per page (presentation only)
+apps/              byte-identical vendored components (read-only)
+data/synthetic/    suite-shared 100-well fleet as monthly oil (committed, seeded)
+data/real/         real Colorado ECMC production (mirrored, reproducible)
+data/state/        runtime artifacts (tracker DB) — gitignored, self-seeding
 ```
 
 `afe.econ_core` is the suite's single discounting kernel — effective-annual,
