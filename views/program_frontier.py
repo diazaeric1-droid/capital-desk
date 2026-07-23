@@ -26,12 +26,12 @@ pt.context_bar([("Deck", common.program_deck()), ("Data", source_label),
 common.page_purpose(
     "**Efficient frontier** = the best possible program NPV at EACH budget "
     "level. Use it to argue **for or against a budget change**: where the curve "
-    "is steep, the next $5–10MM buys real NPV; where it flattens, extra dollars "
+    "is steep, the next \\$5–10MM buys real NPV; where it flattens, extra dollars "
     "buy little because the rig limit or the economic backlog is binding — "
     "that's the chart to bring when Finance asks \"what would more (or less) "
     "budget actually get us?\"\n\n"
     "**Price-deck sensitivity** = the same program re-OPTIMIZED at each oil "
-    "price. Use it to test whether the funded slate **survives a $50–60 deck "
+    "price. Use it to test whether the funded slate **survives a \\$50–60 deck "
     "before you sign it** — marginal projects drop out entirely at lower "
     "prices (not just shrink), so this shows how fragile the selection itself "
     "is to the price assumption.")
