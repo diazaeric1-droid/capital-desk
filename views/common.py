@@ -27,6 +27,29 @@ BACKLOG_TEMPLATE = (",".join(core.capital_projects.REQUIRED_CSV_COLUMNS) + "\n"
                     "P001,Well-001,new_drill,Midland-S,9000000,800,1.4,0.9,12,0.75,0.9,30,1\n")
 
 
+# Canonical NRI help string (portfolio convention — verbatim first sentence,
+# CD-specific scoping after the semicolon). Used on the sidebar deck input.
+NRI_HELP = ("NRI = net revenue interest — your share of revenue after royalty "
+            "burdens. The sidebar value drives the AFE net economics (Authorize) "
+            "and the PDP screen (Screen); per-project NRI from the backlog CSV "
+            "overrides it on the Program pages.")
+
+# Type-typical first-year incremental oil (BOPD) by intervention — ONE source for
+# both the Pipeline Board's ranking column and the Draft AFE's uplift anchor
+# caption, so the two pages can never quote different type-typicals. A defensible
+# per-TYPE uplift (an ESP swap is credited more than a paraffin treatment); the
+# real per-well uplift still lives in each well's diagnosis on Draft AFE.
+TYPICAL_UPLIFT_BOPD = {
+    "acid_stimulation": 80.0,
+    "scale_treatment": 60.0,
+    "esp_swap": 150.0,
+    "esp_to_beam_conversion": 40.0,
+    "rod_pump_workover": 50.0,
+    "gas_lift_optimization": 70.0,
+    "paraffin_treatment": 30.0,
+}
+
+
 def page_purpose(body_md: str) -> None:
     """Top-of-page "ℹ️ What is this page for?" affordance — PE feedback: the
     per-chart descriptions were praised, but some pages' PURPOSE (what question
@@ -36,6 +59,55 @@ def page_purpose(body_md: str) -> None:
     layer shared with the sibling products and must not drift from here."""
     with st.popover("ℹ️ What is this page for?"):
         st.markdown(body_md)
+
+
+def next_step(page_path: str, label: str, help: str | None = None) -> None:
+    """Clickable workflow handoff — an ``st.page_link`` at every seam of the
+    capital loop (Draft → Pipeline → execute → Variance → supplemental; Backlog →
+    Optimizer → Frontier; Screener → Draft), so "see the X page" is a click, not
+    a sidebar hunt. Label convention: "→ <verb phrase> (<Page Name>)"; keep the
+    old prose as ``help`` so no guidance is lost.
+
+    Degrades to ``st.caption`` when the page registry is absent (bare per-view
+    AppTest runs execute views outside ``st.navigation``, where page_link cannot
+    resolve paths) — the guidance text still renders, nothing crashes."""
+    known = {p for pages in core.NAV.values() for _t, p, _i in pages}
+    if page_path in known:
+        try:
+            st.page_link(page_path, label=label, help=help)
+            return
+        except Exception:  # noqa: BLE001 — no registry (AppTest) → caption fallback
+            pass
+    st.caption(label + (f" — {help}" if help else ""))
+
+
+def well_label(wid: str) -> str:
+    """Display formatter for suite well ids: "well_013 · <name> (<lift>)".
+    Pass as ``format_func=`` only — selectbox VALUES stay raw ids so session
+    state and cross-page handoffs are untouched. Non-suite ids (Colorado APIs,
+    BYOD wells) render unchanged."""
+    w = str(wid)
+    if w.startswith("well_"):
+        try:
+            import fleet_registry
+            m = fleet_registry.get(w)
+            return f"{w} · {m.name} ({m.lift})"
+        except Exception:  # noqa: BLE001 — unknown id → raw, never crash a picker
+            return w
+    return w
+
+
+def set_diag_preset(preset: dict) -> None:
+    """The sanctioned cross-page handoff INTO Draft AFE: stage a diagnosis preset
+    (well_id, intervention, …) that Draft AFE applies to its form keys BEFORE its
+    widgets render on the next run. Bumps a sequence number so a FRESH preset is
+    applied even if an earlier session preset was already consumed — callers
+    (PDP Screener drill-down, Variance supplement flag, the Draft trend
+    quick-fill, the Data page) never write a widget-owned key from a page body
+    (the class of bug that crashed Operations Center in production)."""
+    ss = st.session_state
+    ss["diag_preset"] = dict(preset)
+    ss["_diag_preset_seq"] = int(ss.get("_diag_preset_seq", 0)) + 1
 
 
 def deck() -> tuple[float, float, float, str]:
@@ -189,7 +261,12 @@ def program_montecarlo(csv_text: str, oil: float, discount: float,
     outcomes via a single-factor Gaussian copula (shared geologic risk): rho=0 is
     independent, higher rho widens the tail (the realistic case on a single-basin
     slate). Marginal P(success)=Pc for any rho, so the MEAN is unchanged. Returns
-    P10/P50/P90, mean, P(loss), and the sample array for a histogram.
+    P90/P50/P10, mean, P(loss), and the sample array for a histogram. Keys follow
+    the suite's SPE exceedance convention: **"p10" is the optimistic HIGH case
+    (the 90th percentile of outcomes), "p90" the downside LOW case (the 10th
+    percentile)** — Pxx = probability of exceedance, not percentile rank. The
+    percentile MATH is untouched; only the labels moved (display-level relabel,
+    pinned by test).
 
     Per-project NPV(price) is interpolated from a coarse price grid (each grid point
     is one cached ``econ_frame`` solve), so the whole sweep is a few solves + a
@@ -238,9 +315,10 @@ def program_montecarlo(csv_text: str, oil: float, discount: float,
         npv_i = _npv_of_price(npv_grid[i])                    # NPV(price) for project i
         totals += np.where(succ[i], npv_i, -capex[i])         # success → NPV, else dry hole
     return {
-        "p10": float(np.percentile(totals, 10)),
+        # SPE exceedance labels: P90 = downside (10th pctile), P10 = upside (90th).
+        "p90": float(np.percentile(totals, 10)),
         "p50": float(np.percentile(totals, 50)),
-        "p90": float(np.percentile(totals, 90)),
+        "p10": float(np.percentile(totals, 90)),
         "mean": float(totals.mean()),
         "p_loss": float((totals < 0).mean()),
         "samples": totals,

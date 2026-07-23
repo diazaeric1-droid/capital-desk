@@ -22,49 +22,71 @@ NRI = float(ss.get("nri", 0.80))
 DISC = float(ss.get("discount", 0.10))
 SEV = float(ss.get("severance_pct", 7.5)) / 100.0
 
-# Type-typical first-year incremental oil (BOPD) by intervention — a defensible
-# per-TYPE uplift so the board's Net NPV reflects the kind of job, not just its
-# cost (the old flat +100 made every AFE's NPV pure inverse-cost). The real
-# per-well uplift still lives in each well's diagnosis on the Draft AFE page.
-TYPICAL_UPLIFT_BOPD = {
-    "acid_stimulation": 80.0,
-    "scale_treatment": 60.0,
-    "esp_swap": 150.0,
-    "esp_to_beam_conversion": 40.0,
-    "rod_pump_workover": 50.0,
-    "gas_lift_optimization": 70.0,
-    "paraffin_treatment": 30.0,
-}
+# Type-typical first-year uplift per intervention — ONE shared source in
+# views/common.py (the Draft AFE anchor caption quotes the same figures).
+TYPICAL_UPLIFT_BOPD = common.TYPICAL_UPLIFT_BOPD
 
 pt.masthead("capital", "Pipeline Board",
             "Every in-flight AFE — status, dollars, required authority, audit trail.")
 pt.context_bar([
-    ("Deck", f"${OIL:.0f}/bbl · NRI {NRI:.0%} · {DISC:.1%} disc"),
+    ("Deck", common.deck()[3]),
     ("Data", "Demo tracker (SQLite, product-local)"),
     ("Scope", "In-flight + approved AFEs (not yet executed)"),
 ])
 common.page_purpose(
     "**What this page answers:** where does every in-flight AFE stand, whose "
     "sign-off does it still need, and where is it stuck?\n\n"
-    "**Use it to run the AFE review:** the board ranks the slate (Net NPV is a "
-    "type-typical ranking basis), the authority ladder shows the $-routed "
-    "sign-off tiers, and the **AFE Detail** panel below shows one AFE's full "
-    "journey — a stepper of every stage, days-in-status, and exactly what's "
+    "**Use it to run the AFE review:** the board ranks the slate by type-typical "
+    "Net NPV (P&A / cost-only jobs last), the authority ladder shows the "
+    "$-routed sign-off tiers, and the **AFE Detail** panel below shows one AFE's "
+    "full journey — a stepper of every stage, days-in-status, and exactly what's "
     "remaining to get it approved. Advancing an AFE to *executed* sends its "
-    "actuals to the Variance page.")
+    "actuals to the Variance page.\n\n"
+    "**The product's three loops** (this board is the hub of the first): "
+    "**AFE loop** — Draft AFE → Pipeline Board → execute → Variance (supplement "
+    "back to Draft). **Budget loop** — Backlog → Optimizer → Frontier & "
+    "Sensitivity. **Deals** — PDP Screener (→ Draft AFE for a well worth "
+    "working).")
+
+# One-time meeting-flow orientation (dismissible; the same three-loop map lives
+# permanently in the page_purpose popover above, so it stays reachable after
+# dismissal).
+if not ss.get("_seen_orientation"):
+    with st.container(border=True):
+        st.markdown("**First time here? Capital Desk runs three loops:**")
+        o1, o2, o3 = st.columns(3)
+        with o1:
+            st.markdown("**AFE loop:** Draft → Pipeline → execute → Variance")
+            common.next_step("views/authorize_draft.py",
+                             "→ Start an AFE (Draft AFE)")
+        with o2:
+            st.markdown("**Budget:** Backlog → Optimizer → Frontier")
+            common.next_step("views/program_backlog.py",
+                             "→ Review the inventory (Backlog)")
+        with o3:
+            st.markdown("**Deals:** screen a PDP package")
+            common.next_step("views/screen_pdp.py",
+                             "→ Value a deal (PDP Screener)")
+        if st.button("Got it — don't show this again", key="dismiss_orientation"):
+            ss["_seen_orientation"] = True
+            st.rerun()
 
 
+# NOTE: the token argument is deliberately NOT underscore-prefixed — st.cache_data
+# EXCLUDES underscore-prefixed args from the cache key, so a `_token` parameter
+# would pin the first result forever and the board would go stale after Advance /
+# Submit bumps _afe_cache_token (verified against Streamlit's documented hashing).
 @st.cache_data(show_spinner=False)
-def _pipeline(_token: int) -> pd.DataFrame:
+def _pipeline(token: int) -> pd.DataFrame:
     return core.pipeline_df()
 
 
 @st.cache_data(show_spinner=False)
-def _events(afe_number: str, _token: int) -> pd.DataFrame:
+def _events(afe_number: str, token: int) -> pd.DataFrame:
     return core.get_tracker().events(afe_number)
 
 
-def _net_npv(row) -> float | None:
+def _net_npv(row, oil: float, nri: float, disc: float, sev: float) -> float | None:
     """Deterministic net-NPV ranking column at the GLOBAL deck, using a TYPE-typical
     first-year uplift per intervention (so the ranking reflects the kind of job, not
     just its cost). Severance from the deck is applied for consistency with the
@@ -74,10 +96,42 @@ def _net_npv(row) -> float | None:
     if uplift is None or intervention not in core.afe_cost_db.COST_TEMPLATES:
         return None
     e = core.draft_economics(float(row["total_cost_usd"]), uplift,
-                             realized_price_per_bbl=OIL,
-                             net_revenue_interest=NRI, discount_rate=DISC)
+                             realized_price_per_bbl=oil,
+                             net_revenue_interest=nri, discount_rate=disc)
     return float(common.net_npv_gross_wellhead_severance(
-        e.net_npv_10pct_usd, e.net_cost_to_operator_usd, OIL, SEV))
+        e.net_npv_10pct_usd, e.net_cost_to_operator_usd, oil, sev))
+
+
+@st.cache_data(show_spinner=False)
+def _board_economics(token: int, oil: float, nri: float, disc: float,
+                     sev: float) -> pd.DataFrame:
+    """The board rows (one draft_economics solve per AFE) cached on the tracker
+    token + the deck, so changing the detail selectbox below no longer recomputes
+    every AFE's economics on each rerun — only a tracker change or a deck change
+    busts this."""
+    rows = []
+    for _, r in _pipeline(token).iterrows():
+        try:
+            net_npv = _net_npv(r, oil, nri, disc, sev)
+        except Exception:  # noqa: BLE001 — ranking column must never take down the board
+            net_npv = None
+        rows.append({
+            "AFE #": r["afe_number"],
+            "Well": r["well_id"],
+            "Intervention": str(r["intervention"]).replace("_", " "),
+            "Gross Cost $": float(r["total_cost_usd"]),
+            "Net NPV (type-typical) $": net_npv,
+            "Status": str(r["status"]).replace("_", " "),
+            "Required Approver": r["required_approver"],
+            "Days in Status": int(r["days_in_status"]),
+            "Bottleneck": r["bottleneck_risk"],
+        })
+    # Rank the slate: type-typical Net NPV descending, P&A / cost-only (NaN) last
+    # — the page_purpose promises a ranked board, so the table must actually rank.
+    return (pd.DataFrame(rows)
+            .sort_values("Net NPV (type-typical) $", ascending=False,
+                         na_position="last")
+            .reset_index(drop=True))
 
 
 token = ss.get("_afe_cache_token", 0)
@@ -104,24 +158,10 @@ pt.section("AFE Pipeline",
            "— a ranking basis, not a per-well forecast; the real uplift lives in each "
            "well's diagnosis on Draft AFE. Closed-out actual-vs-AFE variance lives on "
            "the Variance page.")
-rows = []
-for _, r in df.iterrows():
-    try:
-        net_npv = _net_npv(r)
-    except Exception:  # noqa: BLE001 — ranking column must never take down the board
-        net_npv = None
-    rows.append({
-        "AFE #": r["afe_number"],
-        "Well": r["well_id"],
-        "Intervention": str(r["intervention"]).replace("_", " "),
-        "Gross Cost $": float(r["total_cost_usd"]),
-        "Net NPV (type-typical) $": net_npv,
-        "Status": str(r["status"]).replace("_", " "),
-        "Required Approver": r["required_approver"],
-        "Days in Status": int(r["days_in_status"]),
-        "Bottleneck": r["bottleneck_risk"],
-    })
-board = pd.DataFrame(rows)
+board = _board_economics(token, OIL, NRI, DISC, SEV)
+st.caption("Ranked by type-typical Net NPV (highest first); P&A / cost-only AFEs last.")
+_sla_txt = " · ".join(f"{s.replace('_', ' ')} {d}d"
+                      for s, d in core.afe_tracker.STAGE_SLA_DAYS.items() if d)
 st.dataframe(
     board, width="stretch", hide_index=True,
     column_config={
@@ -132,6 +172,13 @@ st.dataframe(
                  "intervention (ESP swap 150 bopd, scale 60, paraffin 30, …) less "
                  "severance — a ranking basis, not each well's real upside. "
                  "Blank = P&A or an intervention with no production economics."),
+        "Days in Status": st.column_config.NumberColumn(
+            help="Time in the CURRENT stage only — total days open shows in the "
+                 "AFE Detail panel below."),
+        "Bottleneck": st.column_config.TextColumn(
+            help="Days-in-status vs the stage SLA (" + _sla_txt + "): LOW = within "
+                 "SLA, MEDIUM = over SLA, HIGH = over 1.5× SLA. Approved/executed "
+                 "stages show '—' (no SLA applies)."),
     })
 st.download_button("Download pipeline (CSV)", data=board.to_csv(index=False),
                    file_name="afe_pipeline.csv", mime="text/csv")
@@ -201,10 +248,15 @@ lc1, lc2 = st.columns([1, 2])
 if cur == "executed":
     lc1.success("Executed")
     live = sel in ss.get("live_actuals", {})
-    lc2.caption("Executed this session — its actuals are on the Variance page."
-                if live else "Already executed (pre-seeded). The Variance page shows a "
-                "separate set of closed-out actuals; execute an in-flight AFE here to "
-                "add it there.")
+    with lc2:
+        common.next_step(
+            "views/authorize_variance.py",
+            "→ Reconcile its actuals (Variance)",
+            help="Executed this session — its closed-out actuals are on the "
+                 "Variance page." if live else
+                 "Already executed (pre-seeded). The Variance page shows a "
+                 "separate set of closed-out actuals; execute an in-flight AFE "
+                 "here to add it there.")
 elif cur not in order:
     # terminal / non-advanceable status the lifecycle doesn't model (e.g. 'rejected',
     # 'cancelled') — STATUS_ORDER only covers the draft→executed path, so guard the
@@ -231,6 +283,10 @@ else:
 if ss.get("live_actuals"):
     st.caption("Executed this session (now on the Variance page): "
                + ", ".join(sorted(ss["live_actuals"])))
+    common.next_step("views/authorize_variance.py",
+                     "→ Reconcile their actuals (Variance)",
+                     help="The Variance page includes every AFE executed this "
+                          "session alongside the demo closed-out jobs.")
 
 st.markdown("**Audit trail** — immutable status-change log, appended, never "
             "overwritten:")

@@ -48,7 +48,8 @@ def test_program_montecarlo_brackets_the_deterministic_risked_npv(booted):
     econ = core.capital_economics.economics_frame(core.load_backlog(), 70.0, 0.10)
     prog, _ = core.optimize_program(econ, 60e6, 170.0)
     mc = common.program_montecarlo(txt, 70.0, 0.10, tuple(sorted(prog.selected_ids)))
-    assert mc["p10"] < mc["p50"] < mc["p90"]
+    # SPE exceedance keys: p90 = downside low case, p10 = upside high case
+    assert mc["p90"] < mc["p50"] < mc["p10"]
     # the risked NPV IS the expected value — the MC mean must land near it
     assert abs(mc["mean"] - prog.risked_npv) < 0.1 * abs(prog.risked_npv)
 
@@ -79,8 +80,8 @@ def test_severance_on_gross_wellhead_and_afe_pdp_reconcile(booted):
 
 
 def test_montecarlo_correlation_widens_tail_holds_mean(booted):
-    """Geologic correlation ρ widens the program downside (lower P10) without moving
-    the mean — the success marginals stay at Pc."""
+    """Geologic correlation ρ widens the program downside (lower P90 — SPE
+    exceedance low case) without moving the mean — the success marginals stay at Pc."""
     core = booted
     txt = core.backlog_csv_text()
     econ = core.capital_economics.economics_frame(core.load_backlog(), 70.0, 0.10)
@@ -88,7 +89,7 @@ def test_montecarlo_correlation_widens_tail_holds_mean(booted):
     ids = tuple(sorted(prog.selected_ids))
     indep = common.program_montecarlo(txt, 70.0, 0.10, ids, price_sd=12.0, rho=0.0)
     corr = common.program_montecarlo(txt, 70.0, 0.10, ids, price_sd=12.0, rho=0.6)
-    assert corr["p10"] < indep["p10"]                          # wider downside
+    assert corr["p90"] < indep["p90"]      # wider downside (p90 = SPE low case)
     assert corr["mean"] == pytest.approx(indep["mean"], rel=0.03)  # mean preserved
 
 

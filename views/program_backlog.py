@@ -47,7 +47,7 @@ with st.expander("Bring your own backlog (CSV)"):
     st.caption("Required columns: "
                + ", ".join(f"`{c}`" for c in core.capital_projects.REQUIRED_CSV_COLUMNS)
                + ". Nothing is stored server-side — parsed in memory for this session.")
-    st.download_button("Download template CSV", data=common.BACKLOG_TEMPLATE,
+    st.download_button("Download template (CSV)", data=common.BACKLOG_TEMPLATE,
                        file_name="backlog_template.csv", mime="text/csv")
     up = st.file_uploader("Backlog CSV", type=["csv"], key="backlog_upload_page")
     if up is not None:
@@ -141,13 +141,20 @@ st.dataframe(
     table, width="stretch", hide_index=True,
     column_config={
         "Capex $": st.column_config.NumberColumn(format="$%,.0f"),
-        "Risked NPV $": st.column_config.NumberColumn(format="$%,.0f"),
-        "NPV $": st.column_config.NumberColumn(format="$%,.0f"),
+        "NPV $": st.column_config.NumberColumn(format="$%,.0f",
+            help="Unrisked NPV — full success case, no Pc weighting."),
         "EUR (bbl)": st.column_config.NumberColumn(format="%,.0f"),
         "F&D ($/bbl)": st.column_config.NumberColumn(format="$%.2f",
             help="Capex per EUR barrel — vs ~$8–15/bbl typical Permian F&D."),
-        "Cap. Eff. (x)": st.column_config.NumberColumn(format="%.2f"),
-        "Pc": st.column_config.NumberColumn(format="%.2f"),
+        "Risked NPV $": st.column_config.NumberColumn(format="$%,.0f",
+            help="Pc-weighted: Pc × PV(revenue) − capex. The unrisked value is "
+                 "in the NPV $ column."),
+        "Cap. Eff. (x)": st.column_config.NumberColumn(format="%.2f",
+            help="Risked NPV per $ of capex — the greedy ranking metric the "
+                 "Optimizer's baseline sorts by."),
+        "Pc": st.column_config.NumberColumn(format="%.2f",
+            help="Chance of success. Risked NPV chance-weights REVENUE only — "
+                 "cost is certain (a dry hole still spends its capex)."),
     })
 st.download_button("Download backlog economics (CSV)", data=econ.to_csv(index=False),
                    file_name="backlog_economics.csv", mime="text/csv")
@@ -155,5 +162,11 @@ theme.source_note(
     "One row per project: Arps (qi, Di, b) type curve → 15-yr monthly volumes → "
     "net margin x NRI → PV at the deck discount; risked NPV chance-weights "
     "revenue only (cost is certain).")
+
+common.next_step(
+    "views/program_optimizer.py",
+    "→ Build the funded program (Optimizer)",
+    help="The Optimizer chooses from THIS backlog under a capital budget and a "
+         "rig-day limit — fix anything that looks wrong here first.")
 
 theme.references(["arps", "npv"])

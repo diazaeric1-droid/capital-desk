@@ -8,7 +8,7 @@ cross-product switcher, and a denser "enterprise console" CSS layer. Views impor
 ONLY this module:
 
     import product_theme as pt
-    pt.masthead("ops", "Triage Board", "Fleet ranked by risked-NPV opportunity")
+    pt.masthead("ops", "Optimization Board", "Fleet ranked by risked-NPV opportunity")
     pt.context_bar([("Asset", "Permian synthetic fleet"), ("Deck", "$70 · 80% NRI")])
     pt.kpi_row([{"label": "Open Alerts", "value": "7", "delta": "+2 vs yesterday"}])
 
@@ -27,13 +27,13 @@ from theme import (  # re-exported so views need a single import
     NAVY, BLUE, RED, GREEN, AMBER, PURPLE, TEAL, GREY, COLORWAY, CITATIONS,
 )
 
-PRODUCT_VERSION = "0.5.0"
+PRODUCT_VERSION = "0.6.0"
 
 # The three consolidated operator products. Each entry:
 #   (key, display name, tagline, live url)
 PRODUCTS = [
     ("ops", "Operations Center",
-     "Surveillance · loss accounting · triage",
+     "Surveillance · loss accounting · optimization",
      "https://operations-center.streamlit.app"),
     ("workbench", "Engineering Workbench",
      "Design · diagnose · predict · optimize",
@@ -50,7 +50,8 @@ ENTERPRISE_CSS = """
     /* denser console layout on top of theme.CSS */
     .block-container,
     [data-testid="stMainBlockContainer"],
-    [data-testid="stAppViewBlockContainer"] {padding-top: 4.2rem; max-width: 1500px;}
+    [data-testid="stAppViewBlockContainer"] {padding-top: 4.2rem; padding-bottom: 2rem;
+                                             max-width: 1500px;}
     [data-testid="stMetric"] {padding: 0.45rem 0.7rem; border-radius: 8px;}
     [data-testid="stMetricValue"] {font-size: 1.12rem;}
     [data-testid="stMetricLabel"] {font-size: 0.68rem; letter-spacing: 0.02em;
@@ -216,7 +217,8 @@ def empty_state(message: str, hint: str = "") -> None:
 def product_switcher(current_key: str) -> None:
     """Sidebar cross-product navigation (the M365-style switcher for the trio).
 
-    Call once from app.py's sidebar block, after the product-specific controls."""
+    Call once from app.py's sidebar block, at the TOP of the sidebar — the
+    switcher renders BEFORE the product-specific controls in all three apps."""
     rows = []
     for key, name, tagline, url in PRODUCTS:
         if key == current_key:

@@ -69,8 +69,9 @@ def test_backlog_committed_and_realistic(booted):
 
 
 def test_navigation_matches_design(booted):
-    """The page map is the product design: 5 sections, 10 pages, material icons
-    (no emoji), and every view file exists."""
+    """The page map is the product design: 5 sections, 10 pages, a DISTINCT
+    material icon per page (no emoji, no repeated per-section icon), and every
+    view file exists."""
     core = booted
     assert list(core.NAV) == ["Authorize", "Program", "Screen", "File", "Data"]
     titles = {sec: [t for t, _p, _i in pages] for sec, pages in core.NAV.items()}
@@ -79,11 +80,23 @@ def test_navigation_matches_design(booted):
     assert titles["Screen"] == ["PDP Screener"]
     assert titles["File"] == ["Regulatory Filing"]
     assert titles["Data"] == ["Sources & BYOD", "Methods & Limitations"]
-    allowed_icons = {":material/approval:", ":material/account_balance:",
-                     ":material/query_stats:", ":material/description:",
-                     ":material/database:"}
+    expected_icons = {
+        "Pipeline Board": ":material/approval:",
+        "Draft AFE": ":material/edit_document:",
+        "Variance": ":material/difference:",
+        "Backlog": ":material/list_alt:",
+        "Optimizer": ":material/tune:",
+        "Frontier & Sensitivity": ":material/ssid_chart:",
+        "PDP Screener": ":material/query_stats:",
+        "Regulatory Filing": ":material/description:",
+        "Sources & BYOD": ":material/database:",
+        "Methods & Limitations": ":material/fact_check:",
+    }
+    seen_icons = []
     for _sec, pages in core.NAV.items():
         for title, path, icon in pages:
             assert (ROOT / path).exists(), f"missing view file for {title}: {path}"
-            assert icon in allowed_icons
+            assert icon == expected_icons[title], f"{title}: unexpected icon {icon}"
             assert icon.startswith(":material/")  # no emoji in nav
+            seen_icons.append(icon)
+    assert len(seen_icons) == len(set(seen_icons)), "nav icons must be distinct"

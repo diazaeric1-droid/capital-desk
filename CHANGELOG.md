@@ -1,5 +1,111 @@
 # Changelog
 
+## [0.6.0] — 2026-07-23
+
+Round 2 of the senior-PE workflow audit: connective tissue. The round-1 numbers
+and purpose layer stand; this release makes the capital loop CLICKABLE end to
+end, gives every bundled path a working out-of-the-box trend panel, and closes
+the control-level help gaps — nothing removed, no math changed, vendored `apps/`
+untouched.
+
+### Added
+- **Clickable next-step handoffs (CD-WO-1).** New `views/common.py::next_step()`
+  (`st.page_link` over `core.NAV` paths; degrades to a caption in bare AppTest
+  runs where no page registry exists). Every seam of the loop now links instead
+  of saying "see the X page": Draft→Pipeline (after submit), Pipeline→Variance
+  (executed AFEs), Variance→Draft (supplemental), Backlog→Optimizer,
+  Optimizer→Frontier, Screener→Draft, W-3 empty state→Draft, Data-page
+  diagnosis→Draft. Labels follow the portfolio convention "→ <verb phrase>
+  (<Page Name>)" with the old prose preserved as the link's help text.
+- **Working out-of-the-box trend path (CD-WO-2).** The Draft-AFE empty state now
+  offers a one-click "Show a producing well instead" quick-fill (well_017 ·
+  Reeves 17H, well_001, or a real Colorado API) staged through the sanctioned
+  session-preset handoff — never a direct widget-key write. New product-local
+  `examples/well_diagnosis_well_017.json` (esp_swap, 150 BOPD) is listed FIRST
+  in the example picker and exercises the trend panel end-to-end; the vendored
+  ED-xxxH examples (no production source) keep their honest empty state.
+- **Persistent Monte-Carlo (CD-WO-3).** Draft-AFE MC results + an input snapshot
+  now live in session state: P10/P50/P90 and the tornado survive widget touches,
+  and a changed input shows the same staleness warning the AFE document uses
+  ("inputs changed since this run") instead of the numbers vanishing mid-quote.
+- **Per-AFE variance rollup + actionable supplement flag (CD-WO-7).** "Variance
+  by AFE" table (budget / actual / variance $ / % / policy pill, worst first)
+  answers "which JOB overran" directly; the supplement banner now explains the
+  action, pre-fills Draft AFE with the worst offender's well + intervention
+  (when the live tracker knows it), and links there.
+- **Screen→Draft handoff (CD-WO-8).** "Draft an AFE for this well" on the
+  drill-down stages the selected well id into Draft AFE (its history auto-loads
+  in the trend panel) — no more re-typing an id the app already knows.
+- **Meeting-flow orientation (CD-WO-9).** A dismissible one-time strip on the
+  landing Pipeline Board maps the three loops (AFE: Draft→Pipeline→execute→
+  Variance · Budget: Backlog→Optimizer→Frontier · Deals: PDP Screener) with
+  links; the same map lives permanently in the page's ℹ️ popover.
+
+### Changed
+- **SPE exceedance labels (CD-WO-4, display-level only).** The 10th-percentile
+  MC outputs are now labeled **P90 (downside)** and the 90th **P10 (upside)** on
+  Draft AFE and the Optimizer (dict keys in `program_montecarlo` renamed with
+  both consumers; percentile math untouched, pinned by test), matching the
+  suite's vendored-core convention. Methods page carries the portfolio sentence:
+  "Suite convention: Pxx = probability of exceedance — P10 is the high case, P90
+  the low case."
+- **Exact typed inputs (CD-WO-5).** The four sidebar deck controls and all five
+  Screener assumption sliders are now `st.number_input` (a $68.50 deck / $12.75
+  LOE is enterable): portfolio ranges "Oil price ($/bbl)" 0–500 step 5 (the old
+  $120 cap made OC decks irreproducible here), "NRI (net revenue interest)" 0–1
+  step 0.01 (0.50 floor dropped — nothing required it), "Discount rate
+  (effective-annual)" 0–1 step 0.005 (DF(m) help kept). Session keys unchanged;
+  gas labels standardized to $/Mscf.
+- **Pipeline Board ranks + explains + caches (CD-WO-6).** The board now actually
+  sorts by type-typical Net NPV (P&A/cost-only last — the page_purpose promise);
+  "Bottleneck" column help states the real tracker rule (days-in-status vs
+  STAGE_SLA_DAYS; MEDIUM > SLA, HIGH > 1.5×) and "Days in Status" is defined;
+  per-AFE board economics moved into an `@st.cache_data` frame keyed on
+  (tracker token, deck) so the detail selectbox no longer recomputes the slate.
+- **Control/column help sweep (CD-WO-10).** Backlog: help on Cap. Eff. (risked
+  NPV per $ capex — the greedy ranking metric), Pc (revenue-only chance
+  weighting), NPV $ vs Risked NPV $. Optimizer: the quarterly rig slider is now
+  keyed (`rig_q`, seeded annual÷4) so a user-set value survives annual-cap
+  changes, with help. Draft AFE: `TYPICAL_UPLIFT_BOPD` moved to
+  `views/common.py` (ONE source shared with the Pipeline Board) and a dynamic
+  anchor caption under the uplift input ("typical first-year uplift for esp swap
+  ≈ 150 BOPD — the Pipeline Board ranks with this figure"); the user's value is
+  never auto-overwritten. Regulatory: help on the production-source radio and
+  the month selector.
+- **Portfolio chrome (CD-WO-11).** `product_theme.py` re-synced from the OC
+  v0.8.2 lineage (fixes the stale "…loss accounting · triage" switcher tagline →
+  "· optimization") + EW's padding-bottom fix; product switcher moved to the TOP
+  of the sidebar (divider dropped); every nav page gets a DISTINCT material icon;
+  canonical NRI help on the sidebar deck; suite well ids render as
+  "well_013 · <name> (<lift>)" (`well_label`) in the Screener drill-down and
+  Draft-AFE trend note, with portability to the sibling products noted.
+
+### Fixed
+- **Stale-board cache bug.** `_pipeline(_token)` / `_events(…, _token)` used
+  underscore-prefixed token args — `st.cache_data` EXCLUDES those from the cache
+  key, so the board could serve a stale tracker read after Advance/Submit bumped
+  the token. Tokens renamed to hash properly (regression-pinned in source).
+- **Screener widget-owned-key write retired (CD-WO-8).** The drill-down's
+  pre-widget `ss["well_id"]` write above its own selectbox (legal today, but the
+  exact class that crashed Operations Center in production and that AppTest
+  cannot catch) replaced with the `index=` pattern; `well_id` is now a plain
+  session variable no widget owns.
+- **Cross-page diagnosis presets apply reliably.** Session presets now carry a
+  sequence token (`common.set_diag_preset`) and each preset/example/upload token
+  applies AT MOST once (seen-set) — a fresh handoff from Screener/Variance/Data
+  is applied even if an example is still selected, and a still-selected example
+  can no longer re-clobber it on the next rerun.
+
+### Tests
+- `tests/test_round2.py` (10): SPE p10>p90 pin + Methods sentence + display
+  labels, `well_label`, single-source uplift map, `next_step` caption degrade +
+  every-seam source pin, screener key-hygiene pin, cache-token hash pin, and the
+  product example resolving end-to-end. `tests/test_app.py`: board actually
+  ranked + orientation dismiss flow, quick-fill lights the trend panel through
+  the preset handoff, MC persistence + staleness warning, per-AFE rollup sorted
+  with an actionable supplement pointer; page_purpose now asserted EXACTLY once
+  per view. Nav test pins the distinct per-page icons.
+
 ## [0.5.0] — 2026-07-23
 
 PE field-feedback round 1 — a practicing petroleum engineer reviewed the product;

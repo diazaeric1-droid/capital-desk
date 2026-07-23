@@ -120,6 +120,12 @@ SYNTH_FLEET_GENERATOR = SYNTH_FLEET_DIR / "generate_fleet_pdp.py"
 
 EXAMPLES_DIR = APP_DIRS["afe"] / "examples"
 
+# Product-local example diagnoses (NOT the vendored component's examples): keyed
+# to suite well ids (well_0NN) that resolve in the bundled production sources, so
+# at least one out-of-the-box example exercises the Draft-AFE trend panel
+# end-to-end (the vendored ED-xxxH examples exist in no production source).
+PRODUCT_EXAMPLES_DIR = HERE / "examples"
+
 
 # ---- bootstrap (regenerate gitignored artifacts on first run) ------------------
 
@@ -226,17 +232,18 @@ def optimize_program(econ_df, budget: float, rig_capacity: float | None):
 
 
 # ---- navigation design (single source of truth; app.py builds st.Page from it) --
-# section -> list of (page title, view file, material icon)
+# section -> list of (page title, view file, material icon). Icons are DISTINCT
+# per page (not one repeated icon per section) so the sidebar scans by shape.
 NAV: dict[str, list[tuple[str, str, str]]] = {
     "Authorize": [
         ("Pipeline Board", "views/authorize_pipeline.py", ":material/approval:"),
-        ("Draft AFE", "views/authorize_draft.py", ":material/approval:"),
-        ("Variance", "views/authorize_variance.py", ":material/approval:"),
+        ("Draft AFE", "views/authorize_draft.py", ":material/edit_document:"),
+        ("Variance", "views/authorize_variance.py", ":material/difference:"),
     ],
     "Program": [
-        ("Backlog", "views/program_backlog.py", ":material/account_balance:"),
-        ("Optimizer", "views/program_optimizer.py", ":material/account_balance:"),
-        ("Frontier & Sensitivity", "views/program_frontier.py", ":material/account_balance:"),
+        ("Backlog", "views/program_backlog.py", ":material/list_alt:"),
+        ("Optimizer", "views/program_optimizer.py", ":material/tune:"),
+        ("Frontier & Sensitivity", "views/program_frontier.py", ":material/ssid_chart:"),
     ],
     "Screen": [
         ("PDP Screener", "views/screen_pdp.py", ":material/query_stats:"),
@@ -246,6 +253,6 @@ NAV: dict[str, list[tuple[str, str, str]]] = {
     ],
     "Data": [
         ("Sources & BYOD", "views/data_sources.py", ":material/database:"),
-        ("Methods & Limitations", "views/about_methods.py", ":material/database:"),
+        ("Methods & Limitations", "views/about_methods.py", ":material/fact_check:"),
     ],
 }

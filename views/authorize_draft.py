@@ -38,7 +38,7 @@ UPLIFT_EXP = "Exponential (legacy)"
 pt.masthead("capital", "Draft AFE",
             "Turn a well diagnosis into a costed, routed, economics-backed AFE.")
 pt.context_bar([
-    ("Deck", f"${OIL:.0f}/bbl · NRI {NRI:.0%} · {DISC:.1%} disc"),
+    ("Deck", common.deck()[3]),
     ("Data", "Benchmark cost templates (synthetic Permian) — editable below"),
     ("Narrative", "BYOK-optional — all numbers keyless"),
 ])
@@ -54,11 +54,24 @@ common.page_purpose(
 # ---- diagnosis input --------------------------------------------------------
 pt.section("Diagnosis", "Load an example, upload a WellDiagnosis JSON, or type it in.")
 
-sample_files = sorted(core.EXAMPLES_DIR.glob("well_diagnosis*.json"))
+# Product-local examples FIRST (keyed to suite well ids that resolve in the
+# bundled production sources, so the trend panel lights up out-of-the-box), then
+# the vendored component examples (ED-xxxH ids — no production source, honest
+# empty state, kept for schema continuity).
+_example_paths: dict[str, Path] = {}
+for _d in (core.PRODUCT_EXAMPLES_DIR, core.EXAMPLES_DIR):
+    if _d.exists():
+        for _p in sorted(_d.glob("well_diagnosis*.json")):
+            _example_paths.setdefault(_p.name, _p)
 c_src1, c_src2 = st.columns(2)
 with c_src1:
     chosen = st.selectbox("Example diagnosis",
-                          ["(manual)"] + [p.name for p in sample_files])
+                          ["(manual)"] + list(_example_paths),
+                          help="well_diagnosis_well_017 is keyed to a suite well "
+                               "(well_017 · Reeves 17H) with bundled production "
+                               "history — pick it to see the Well Trend panel "
+                               "populated end-to-end. The ED-xxxH examples are the "
+                               "component's originals (no production source).")
 with c_src2:
     up = st.file_uploader("WellDiagnosis JSON (from PE Copilot)", type=["json"],
                           help="Validated before it can become an AFE — bad fields "
@@ -82,8 +95,20 @@ _DEFAULTS = {
 for _k, _v in _DEFAULTS.items():
     ss.setdefault(_k, _v)
 
+# An ACTUAL re-pick of the example selectbox makes that example fresh again
+# (the seen-set below otherwise applies each token at most once).
+if chosen != ss.get("_ex_choice"):
+    ss["_ex_choice"] = chosen
+    ss.setdefault("_diag_tokens_seen", set()).discard(f"example:{chosen}")
+
 preset: dict = {}
 token = "manual"
+# Session presets carry a sequence number (bumped by common.set_diag_preset), so
+# a FRESH handoff from another page (PDP Screener drill-down, Variance supplement
+# flag, the trend quick-fill below, the Data page) is applied exactly once — even
+# if an example is still selected in the box, and even if an older session preset
+# was already consumed.
+_sp_token = f"session-preset:{int(ss.get('_diag_preset_seq', 0))}"
 if up is not None:
     try:
         payload = json.loads(up.getvalue().decode("utf-8"))
@@ -97,12 +122,12 @@ if up is not None:
         "expected_uplift_decline_per_yr", "requested_by")}
     token = f"upload:{up.name}:{up.size}"
     st.success(f"Validated diagnosis for {diag_ok.well_id} ({diag_ok.intervention}).")
+elif ss.get("diag_preset") and _sp_token not in ss.get("_diag_tokens_seen", set()):
+    preset = ss["diag_preset"]          # freshly chained in from another page
+    token = _sp_token
 elif chosen != "(manual)":
-    preset = json.loads((core.EXAMPLES_DIR / chosen).read_text())
+    preset = json.loads(_example_paths[chosen].read_text())
     token = f"example:{chosen}"
-elif ss.get("diag_preset"):
-    preset = ss["diag_preset"]          # chained in from the Data page / PE Copilot
-    token = "session-preset"
 
 
 def _apply_preset(p: dict) -> None:
@@ -120,15 +145,25 @@ def _apply_preset(p: dict) -> None:
         ss["d_decline"] = float(min(1.95, max(0.05, float(p["expected_uplift_decline_per_yr"]))))
 
 
-if token != "manual" and ss.get("_diag_token") != token:
+# Each token is applied AT MOST ONCE (a seen-set, not a single last-token): a
+# still-selected example must never re-clobber a fresher cross-page preset on the
+# next rerun, and vice versa. Picking a different example (new token) reloads.
+_seen = ss.setdefault("_diag_tokens_seen", set())
+if token != "manual" and token not in _seen:
     _apply_preset(preset)
+    _seen.add(token)
     ss["_diag_token"] = token
-    if token != "session-preset":
+    if not token.startswith("session-preset"):
         st.caption("Loaded into the form — edit any field freely; your edits persist "
                    "and won't reset on rerun (pick a different example to reload).")
 
 f1, f2, f3 = st.columns(3)
-well_id = f1.text_input("Well ID", key="d_well_id")
+well_id = f1.text_input("Well ID", key="d_well_id",
+                        help="Well ids are portable across the suite: an Operations "
+                             "Center / Engineering Workbench id (well_001–well_100, "
+                             "e.g. well_017 · Reeves 17H), a name like 'Reeves 1H', "
+                             "or a Colorado API (05-…) resolves to bundled production "
+                             "history in the Well Trend panel below.")
 api = f2.text_input("API #", key="d_api")
 field = f3.text_input("Field", key="d_field")
 f4, f5, f6 = st.columns(3)
@@ -137,7 +172,18 @@ intervention = f5.selectbox("Intervention", interventions, key="d_intervention")
 requested_by = f6.text_input("Requested by", key="d_requested_by")
 diagnosis_text = st.text_area("Primary diagnosis", height=90, key="d_diagnosis")
 g1, g2, g3 = st.columns(3)
-rate = g1.number_input("Incremental uplift (BOPD)", 1.0, 5000.0, step=5.0, key="d_rate")
+rate = g1.number_input("Incremental uplift (BOPD)", 1.0, 5000.0, step=5.0, key="d_rate",
+                       help="First-year incremental oil rate the job is expected to "
+                            "add. Your number is never auto-overwritten — the caption "
+                            "below anchors it against the intervention's type-typical.")
+_typ_uplift = common.TYPICAL_UPLIFT_BOPD.get(intervention)
+if _typ_uplift is not None:
+    g1.caption(f"typical first-year uplift for {intervention.replace('_', ' ')} ≈ "
+               f"**{_typ_uplift:.0f} BOPD** (the Pipeline Board ranks with this "
+               "figure)")
+else:
+    g1.caption("no type-typical uplift for this intervention (cost-only job — "
+               "the Pipeline Board shows no Net NPV for it)")
 decline = g2.number_input("Uplift decline Di (1/yr)", 0.05, 1.95, step=0.05, key="d_decline",
                           help="Nominal annual decline of the uplift stream — the Di "
                                "of the Arps curve below (both models share it).")
@@ -186,6 +232,21 @@ with tl:
             "Colorado ECMC slice (API ids like 05-123-40438). The demo AFE ids "
             "(ED-001H…) exist in no production source — enter a known well id or "
             "name to see its trend here.")
+        # One-click quick-fill: known-resolvable ids so a new PE sees the panel
+        # working instead of concluding it's broken. The well id is staged via the
+        # sanctioned session-preset handoff (applied BEFORE the widgets render on
+        # the next run) — NEVER a direct write to the widget-owned d_well_id key.
+        qf1, qf2 = st.columns([2, 1])
+        _qf_pick = qf1.selectbox(
+            "Show a producing well instead", ["well_017", "well_001", "05-123-40438"],
+            format_func=common.well_label, key="d_trend_quickfill",
+            help="well_0NN = suite synthetic fleet (shared with Operations Center / "
+                 "Engineering Workbench); 05-… = real Colorado ECMC. Only the well "
+                 "id changes — every other form field keeps your edits.")
+        qf2.markdown("<div style='height:1.75rem'></div>", unsafe_allow_html=True)
+        if qf2.button("Use this well", key="d_trend_quickfill_go"):
+            common.set_diag_preset({"well_id": _qf_pick})
+            st.rerun()
     else:
         csv_w, src_w, wid = hit
         fit = None
@@ -233,7 +294,7 @@ with tl:
                             yaxis_title="oil rate (bopd)")
         st.plotly_chart(theme.style_fig(trend, height=320), width="stretch")
         theme.source_note(
-            f"{wid} — {src_w}. Baseline: {base_lbl} at PDP defaults (3-bopd limit, "
+            f"{common.well_label(wid)} — {src_w}. Baseline: {base_lbl} at PDP defaults (3-bopd limit, "
             "6%/yr Dmin — not the Screen page sliders). The green case adds the "
             "AFE's ASSUMED uplift on top of the baseline — a sanity-check overlay, "
             "not a fitted forecast of the job.")
@@ -404,26 +465,56 @@ pt.section("Probabilistic Economics — Gross NPV",
            "figure.")
 if intervention == "p_and_a":
     st.caption("Not applicable to a cost-only job.")
-elif st.button("Run Monte-Carlo NPV"):
-    if IS_HYP:
-        mc = uplift.simulate_uplift_economics(
-            treatment_cost_usd=rollup["total"], incremental_rate_bopd=rate,
-            uplift_decline_per_yr=decline, b=b_val,
-            realized_price_per_bbl=OIL, discount_rate=DISC)
-    else:
-        mc = core.afe_economics.simulate_economics(
-            treatment_cost_usd=rollup["total"], incremental_rate_bopd=rate,
-            uplift_decline_per_yr=decline, realized_price_per_bbl=OIL,
-            discount_rate=DISC)
+else:
+    # Results PERSIST across widget touches (same idiom as the _afe_snapshot on
+    # the AFE document below): the run + an input snapshot live in session state,
+    # render whenever present, and a staleness warning fires when the current
+    # inputs no longer match the run — a PE who tweaks price after running keeps
+    # the P10/P50/P90 they were quoting, clearly flagged as pre-tweak.
+    _mc_inputs_now = {"afe_total": float(rollup["total"]), "rate": float(rate),
+                      "decline": float(decline), "b": float(b_val),
+                      "model": uplift_model, "oil": OIL, "disc": DISC}
+    if st.button("Run Monte-Carlo NPV", key="d_run_mc",
+                 help="10,000 seeded trials — deterministic for the same inputs. "
+                      "Results stay on screen until you re-run; editing any "
+                      "driving input flags them as stale."):
+        if IS_HYP:
+            mc_run = uplift.simulate_uplift_economics(
+                treatment_cost_usd=rollup["total"], incremental_rate_bopd=rate,
+                uplift_decline_per_yr=decline, b=b_val,
+                realized_price_per_bbl=OIL, discount_rate=DISC)
+        else:
+            mc_run = core.afe_economics.simulate_economics(
+                treatment_cost_usd=rollup["total"], incremental_rate_bopd=rate,
+                uplift_decline_per_yr=decline, realized_price_per_bbl=OIL,
+                discount_rate=DISC)
+        ss["_afe_mc"] = mc_run
+        ss["_afe_mc_inputs"] = dict(_mc_inputs_now)
+
+mc = None if intervention == "p_and_a" else ss.get("_afe_mc")
+if mc is not None:
+    if ss.get("_afe_mc_inputs") != _mc_inputs_now:
+        st.warning("Inputs changed since this Monte-Carlo ran (cost lines, uplift, "
+                   "decline model, or deck) — the P10/P50/P90 below reflect the "
+                   "**previous** inputs. Click **Run Monte-Carlo NPV** to refresh.")
+    # SPE exceedance labels (suite convention): P90 = downside low case (the
+    # engine's 10th-percentile field), P10 = upside high case (90th percentile).
+    # Display-level relabel only — the vendored/product MC math is untouched.
     pt.kpi_row([
-        {"label": "P10 Gross NPV (Downside)", "value": f"${mc.npv_p10_usd/1e6:,.2f}MM"},
+        {"label": "P90 Gross NPV (Downside)", "value": f"${mc.npv_p10_usd/1e6:,.2f}MM",
+         "help": "SPE exceedance convention: P90 = the low case, exceeded in 90% "
+                 "of trials (the distribution's 10th percentile)."},
         {"label": "P50 Gross NPV (Median)", "value": f"${mc.npv_p50_usd/1e6:,.2f}MM"},
-        {"label": "P90 Gross NPV (Upside)", "value": f"${mc.npv_p90_usd/1e6:,.2f}MM"},
+        {"label": "P10 Gross NPV (Upside)", "value": f"${mc.npv_p90_usd/1e6:,.2f}MM",
+         "help": "SPE exceedance convention: P10 = the high case, exceeded in only "
+                 "10% of trials (the distribution's 90th percentile)."},
         {"label": "P(Payout < 24 mo)", "value": f"{mc.probability_of_payout*100:.0f}%"},
     ])
-    if IS_HYP:
+    _mc_snap = ss.get("_afe_mc_inputs") or {}
+    if _mc_snap.get("model", uplift_model) == UPLIFT_HYP:
+        _mc_b = float(_mc_snap.get("b", b_val))
         st.caption(f"Trials sample uplift rate, Di, and price around the Arps "
-                   f"stream with **b = {b_val:.2f} held fixed** (b itself is not "
+                   f"stream with **b = {_mc_b:.2f} held fixed** (b itself is not "
                    "sampled — it is a model choice, not a measured uncertainty).")
     items_t = sorted(mc.tornado.items(), key=lambda kv: kv[1]["swing"])
     labels = [k.replace("_", " ") for k, _ in items_t]
@@ -503,6 +594,7 @@ if st.button("Generate AFE", type="primary"):
         ss["_afe_pending"] = {"well_id": well_id, "intervention": intervention,
                               "total_cost_usd": rollup["total"],
                               "requested_by": requested_by}
+        ss.pop("_afe_submitted", None)   # a fresh document supersedes the old toast
 
 if ss.get("_afe_markdown"):
     snap = ss.get("_afe_snapshot") or diag_dict
@@ -517,7 +609,7 @@ if ss.get("_afe_markdown"):
     with st.expander("AFE Preview", expanded=True):
         st.markdown(ss["_afe_markdown"])
     d1, d2, d3 = st.columns(3)
-    d1.download_button("Download .md", ss["_afe_markdown"],
+    d1.download_button("Download AFE (Markdown)", ss["_afe_markdown"],
                        file_name=f"AFE_{snap_well}_{snap_int}.md")
     try:
         with tempfile.TemporaryDirectory() as td:
@@ -526,7 +618,7 @@ if ss.get("_afe_markdown"):
                 core.afe_models.AFEDiagnosis(**snap))
             docx_bytes = p.read_bytes()
         d2.download_button(
-            "Download .docx", docx_bytes,
+            "Download AFE (Word .docx)", docx_bytes,
             file_name=f"AFE_{snap_well}_{snap_int}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     except Exception as exc:  # noqa: BLE001 — docx must never block the markdown
@@ -547,6 +639,14 @@ if ss.get("_afe_markdown"):
             requested_by=pending.get("requested_by", requested_by),
             notes="Submitted via Draft AFE"))
         ss["_afe_cache_token"] = ss.get("_afe_cache_token", 0) + 1
-        st.success(f"{afe_no} added to the pipeline as draft — see the Pipeline Board.")
+        ss["_afe_submitted"] = afe_no
+    if ss.get("_afe_submitted"):
+        st.success(f"{ss['_afe_submitted']} added to the pipeline as draft.")
+        common.next_step(
+            "views/authorize_pipeline.py",
+            "→ Track and advance it on the board (Pipeline Board)",
+            help="The submitted AFE lands in draft status — the AFE Detail panel "
+                 "shows its journey stepper, required approver, and what's "
+                 "remaining to get it approved.")
 
 theme.references(["arps", "npv", "monte_carlo"])

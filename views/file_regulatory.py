@@ -86,7 +86,11 @@ if form_choice.startswith("CO"):
     # Texas/Permian demo identity (TX API-42, TX counties), so flag it if chosen.
     src_choice = st.radio("Production source",
                           [common.PDP_REAL_LABEL, common.PDP_SYNTH_LABEL],
-                          horizontal=True)
+                          horizontal=True,
+                          help="Independent of the Screen page's source picker — "
+                               "Form 7 defaults to the real Colorado wells because "
+                               "it is a Colorado form; the synthetic fleet is a "
+                               "Texas identity, offered for mapping practice only.")
     if src_choice == common.PDP_SYNTH_LABEL:
         st.warning("The synthetic fleet is a **Texas/Permian** demo identity (TX API, "
                    "TX counties) — it does NOT correspond to a Colorado ECMC well. "
@@ -98,7 +102,9 @@ if form_choice.startswith("CO"):
     well = c1.selectbox("Well", wells)
     g = tidy[tidy["well_id"] == well].copy()
     months = [str(p) for p in g["_period"]]
-    month = c2.selectbox("Reporting month", months[::-1])   # most-recent first
+    month = c2.selectbox("Reporting month", months[::-1],   # most-recent first
+                         help="Most-recent reported month first — the month you "
+                              "usually need to file.")
     row = g[g["_period"].astype(str) == month].iloc[0]
 
     # identity: real data carries operator/well_name/field/formation; synthetic
@@ -128,6 +134,11 @@ else:
         pt.empty_state("No P&A AFE in the pipeline.",
                        "Draft a plug-and-abandon AFE on the Draft AFE page first, then "
                        "return here to map it onto Form W-3.")
+        common.next_step(
+            "views/authorize_draft.py",
+            "→ Draft a P&A AFE (Draft AFE)",
+            help="Pick the p_and_a intervention there, submit it to the pipeline, "
+                 "then return here — this page maps it onto the W-3 worksheet.")
         st.stop()
     afe_no = st.selectbox("P&A AFE", sorted(pa["afe_number"]))
     r = pa[pa["afe_number"] == afe_no].iloc[0]

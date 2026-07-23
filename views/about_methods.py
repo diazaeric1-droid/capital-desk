@@ -48,6 +48,11 @@ st.markdown(
 
 pt.section("Economics conventions", "One convention, applied everywhere.")
 st.markdown(
+    "- **Suite convention: Pxx = probability of exceedance — P10 is the high case, P90 the low case.** "  # noqa: E501 — the portfolio sentence stays verbatim on one line (pinned by test)
+    "Every P10/P50/P90 label in this product (the Draft-AFE "
+    "Monte-Carlo, the Optimizer's program P-curve) follows this SPE convention; "
+    "the relabel is display-level only — the underlying percentile math is "
+    "untouched and pinned by test.\n"
     "- **Discounting is effective-annual:** DF(m) = (1+r)^(m/12). A 10% input means "
     "10% per YEAR — not the 10.47% monthly compounding implies (pinned by a test).\n"
     "- **Severance + ad valorem** is a single deck input applied to BOTH the AFE net "

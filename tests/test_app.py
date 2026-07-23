@@ -77,11 +77,12 @@ def test_view_renders_clean(view, booted):
 
 def test_every_view_has_page_purpose():
     """PE feedback CD5: every page carries the top-of-page 'What is this page
-    for?' affordance — a product-wide convention, checked as source text so a
-    dropped call on any single page fails loudly."""
+    for?' affordance EXACTLY ONCE — a product-wide convention, checked as source
+    text so a dropped (or duplicated) call on any single page fails loudly."""
     for view in VIEWS:
         src = (ROOT / view).read_text()
-        assert "common.page_purpose(" in src, f"{view} lost its page_purpose call"
+        n = src.count("common.page_purpose(")
+        assert n == 1, f"{view}: expected exactly one page_purpose call, found {n}"
 
 
 def test_pipeline_detail_renders_stepper_and_whats_remaining(booted):
@@ -118,6 +119,95 @@ def test_draft_view_renders_trend_empty_state_and_arps_default(booted):
     _no_exception(at, "draft trend well_001")
     md2 = " ".join(m.value for m in at.markdown)
     assert "No production history found" not in md2
+
+
+def test_pipeline_board_is_ranked_and_orientation_dismisses(booted):
+    """Round 2: the board actually RANKS the slate (type-typical Net NPV desc,
+    NaN/P&A last — the page_purpose promise), and the one-time meeting-flow
+    orientation strip renders until dismissed."""
+    import math
+    at = AppTest.from_file(str(ROOT / "views/authorize_pipeline.py"),
+                           default_timeout=600)
+    for k, v in CONTRACT.items():
+        at.session_state[k] = v
+    at.run()
+    _no_exception(at, "pipeline board")
+    board = at.dataframe[0].value
+    col = list(board["Net NPV (type-typical) $"])
+    nums = [v for v in col if v is not None and not (isinstance(v, float) and math.isnan(v))]
+    tail = col[len(nums):]
+    assert nums == sorted(nums, reverse=True), "board not ranked by Net NPV desc"
+    assert all(v is None or (isinstance(v, float) and math.isnan(v)) for v in tail), \
+        "P&A / cost-only rows must sort last"
+    md = " ".join(m.value for m in at.markdown)
+    assert "First time here? Capital Desk runs three loops:" in md
+    at.button(key="dismiss_orientation").click().run()
+    _no_exception(at, "pipeline board after dismiss")
+    md2 = " ".join(m.value for m in at.markdown)
+    assert "First time here?" not in md2
+    assert at.session_state["_seen_orientation"] is True
+
+
+def test_draft_trend_quickfill_lights_up_the_panel(booted):
+    """Round 2 (CD-WO-2): from the default empty state, the one-click quick-fill
+    stages a resolvable well id through the sanctioned session-preset handoff —
+    the trend panel populates without touching the widget-owned d_well_id key
+    from the page body."""
+    at = AppTest.from_file(str(ROOT / "views/authorize_draft.py"),
+                           default_timeout=600)
+    for k, v in CONTRACT.items():
+        at.session_state[k] = v
+    at.run()
+    _no_exception(at, "draft quickfill initial")
+    md = " ".join(m.value for m in at.markdown)
+    assert "No production history found" in md          # honest empty state first
+    at.button(key="d_trend_quickfill_go").click().run()
+    _no_exception(at, "draft quickfill after click")
+    assert at.session_state["d_well_id"] == "well_017"
+    md2 = " ".join(m.value for m in at.markdown)
+    assert "No production history found" not in md2     # trend panel lit up
+
+
+def test_draft_montecarlo_persists_and_flags_staleness(booted):
+    """Round 2 (CD-WO-3): the Monte-Carlo P10/P50/P90 survive a widget touch and
+    a changed input shows the staleness warning instead of vanishing."""
+    at = AppTest.from_file(str(ROOT / "views/authorize_draft.py"),
+                           default_timeout=600)
+    for k, v in CONTRACT.items():
+        at.session_state[k] = v
+    at.run()
+    at.button(key="d_run_mc").click().run()
+    _no_exception(at, "draft MC run")
+    labels = [m.label for m in at.metric]
+    assert "P90 Gross NPV (Downside)" in labels
+    assert "P10 Gross NPV (Upside)" in labels
+    # touch an input the MC depends on — results must PERSIST, flagged stale
+    at.session_state["oil_price"] = 90.0
+    at.run()
+    _no_exception(at, "draft MC after deck change")
+    labels2 = [m.label for m in at.metric]
+    assert "P90 Gross NPV (Downside)" in labels2, "MC results vanished on rerun"
+    warnings = " ".join(w.value for w in at.warning)
+    assert "Inputs changed since this Monte-Carlo ran" in warnings
+
+
+def test_variance_rolls_up_per_afe_and_points_to_draft(booted):
+    """Round 2 (CD-WO-7): the per-AFE rollup answers 'which JOB overran', worst
+    first, and the supplement banner carries an actionable next step."""
+    at = AppTest.from_file(str(ROOT / "views/authorize_variance.py"),
+                           default_timeout=600)
+    for k, v in CONTRACT.items():
+        at.session_state[k] = v
+    at.run()
+    _no_exception(at, "variance rollup")
+    md = " ".join(m.value for m in at.markdown)
+    assert "Variance by AFE" in md
+    rollup = at.dataframe[0].value                     # the per-AFE table renders first
+    assert set(["AFE", "AFE Budget $", "Actual $", "Variance $"]) <= set(rollup.columns)
+    v_col = list(rollup["Variance $"])
+    assert v_col == sorted(v_col, reverse=True), "per-AFE rollup not sorted by $ desc"
+    caps = " ".join(c.value for c in at.caption)
+    assert "draft a supplemental" in caps.lower() or "Draft the supplemental" in caps
 
 
 def test_optimizer_view_shows_honest_uplift(booted):

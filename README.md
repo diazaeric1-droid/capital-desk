@@ -12,13 +12,21 @@ narrative and nothing else.
 ## Modules
 
 Every page opens with an ℹ️ **"What is this page for?"** popover — plain-PE
-language on what question the page answers and when to use it.
+language on what question the page answers and when to use it — and every seam
+of the workflow carries a **clickable "→ next step" link** (Draft → Pipeline →
+execute → Variance → supplemental; Backlog → Optimizer → Frontier; Screener →
+Draft AFE), so the loop hands off without a sidebar hunt. The landing Pipeline
+Board shows a dismissible one-time orientation strip mapping the three loops.
+All deck and Screener assumptions are **exact typed inputs** (a $68.50 deck or
+$12.75 LOE is enterable — no slider rounding), and probabilistic outputs follow
+the SPE exceedance convention (**P10 = high case, P90 = low case** — see
+Methods & Limitations).
 
 | Section | Page | What it does |
 |---|---|---|
 | **Authorize** | Pipeline Board | Every in-flight AFE in a SQLite tracker: status, days-in-status, delegation-of-authority routing ($ → required approver), >10% overrun supplement flags — and a per-AFE **status stepper** (draft → … → executed) with an explicit **"what's remaining to get this approved"** line, realized days-per-stage vs SLA, and the immutable audit trail |
-| | Draft AFE | Manual inputs **or** a WellDiagnosis JSON → an **editable line-item cost table** (add/remove/reprice; contingency, IDC split, routing, and economics react live), the well's **actual production trend vs. the uplift assumption** (honest empty state when no source knows the well), an **exact Arps uplift decline** (hyperbolic b editable, exponential legacy mode preserved, curve plotted), WI/NRI net economics at the deck, Monte-Carlo P10/50/90 + tornado on the selected model, markdown + .docx export, submit-to-pipeline |
-| | Variance | Actual vs. AFE on closed-out jobs — worst offender by absolute $ (unbudgeted lines never hidden), supplemental-AFE policy flags |
+| | Draft AFE | Manual inputs **or** a WellDiagnosis JSON → an **editable line-item cost table** (add/remove/reprice; contingency, IDC split, routing, and economics react live), the well's **actual production trend vs. the uplift assumption** (honest empty state when no source knows the well, with a one-click quick-fill to a producing well; the bundled `well_diagnosis_well_017` example exercises the panel out-of-the-box), an **exact Arps uplift decline** (hyperbolic b editable, exponential legacy mode preserved, curve plotted), WI/NRI net economics at the deck, **persistent** Monte-Carlo P90/P50/P10 + tornado (results survive widget touches; stale runs are flagged), markdown + .docx export, submit-to-pipeline |
+| | Variance | Actual vs. AFE on closed-out jobs — a **per-AFE rollup ("which job overran")**, worst offender by absolute $ (unbudgeted lines never hidden), supplemental-AFE policy flags with a **pre-fill handoff to Draft AFE** for the supplemental |
 | **Program** | Backlog | The realistic 45-project inventory (13/45 sub-economic at the $70 deck — deliberately), a **Colorado refrac backlog derived from real PDP wells**, or a bring-your-own backlog CSV |
 | | Optimizer | Exact 0/1 MILP (CBC) vs. the greedy baseline at the same budget + rig-day limits, LP-relaxation optimality bound, quarterly schedule, **and a program-level Monte-Carlo (P10/P50/P90, P(loss)) over price + dry-hole risk** |
 | | Frontier & Sensitivity | Efficient frontier (optimal NPV re-solved per budget) + price-deck sensitivity (program re-optimized per price), with on-page budget/rig controls |

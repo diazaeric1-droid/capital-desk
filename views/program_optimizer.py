@@ -142,8 +142,17 @@ with r:
 pt.section("Quarterly Schedule",
            "The funded program laid into quarters under per-quarter rig capacity, "
            "respecting each project's earliest start quarter.")
-rig_q = st.slider("Rig-day capacity per quarter", 20, max(int(rig_cap), 20),
-                  max(int(rig_cap) // 4, 20), 5)
+# Keyed + seeded from the annual cap so a user-set value SURVIVES reruns instead
+# of silently resetting whenever the annual rig cap changes; clamped pre-widget
+# (same-page, pre-instantiation — the sanctioned seeding idiom) so a shrunken
+# annual cap can't strand the stored value above the slider max.
+_rig_q_max = max(int(rig_cap), 20)
+ss.setdefault("rig_q", max(int(rig_cap) // 4, 20))
+ss["rig_q"] = int(min(max(ss["rig_q"], 20), _rig_q_max))
+rig_q = st.slider("Rig-day capacity per quarter", 20, _rig_q_max, step=5, key="rig_q",
+                  help="Quarterly rig availability for the SCHEDULE only — the "
+                       "selection above uses the annual limit; default = annual ÷ 4. "
+                       "Overflow spills into Q4 and is flagged.")
 sched = core.capital_schedule.schedule_program(
     econ, list(sel), projects, n_quarters=4, rig_per_quarter=rig_q)
 if len(sched):
@@ -197,11 +206,24 @@ out = (ptab[["project_id", "name", "label", "area", "Capex", "Risked NPV",
              "Cap. Eff.", "IRR", "Pc"]]
        .rename(columns={"project_id": "ID", "name": "Project", "label": "Type",
                         "area": "Area"}))
-st.dataframe(out, width="stretch", hide_index=True)
+st.dataframe(out, width="stretch", hide_index=True,
+             column_config={
+                 "Cap. Eff.": st.column_config.TextColumn(
+                     help="Risked NPV per $ of capex — the greedy ranking metric."),
+                 "Pc": st.column_config.TextColumn(
+                     help="Chance of success; risked NPV chance-weights revenue "
+                          "only, cost is certain."),
+             })
 st.download_button("Download funded program (CSV)", data=out.to_csv(index=False),
                    file_name="funded_program.csv", mime="text/csv")
 theme.source_note("Selection by exact 0/1 MILP (CBC); greedy baseline and LP bound "
                   "reported above keep the uplift claim honest.")
+common.next_step(
+    "views/program_frontier.py",
+    "→ Stress the budget ask (Frontier & Sensitivity)",
+    help="Before signing this slate: the frontier shows what the next $5–10MM of "
+         "budget buys, and the price strip shows whether the selection survives a "
+         "$50–60 deck. Budget + rig settings carry over (shared session keys).")
 
 # ---- program-level Monte-Carlo --------------------------------------------------
 pt.section("Program Risk — Monte-Carlo",
@@ -223,10 +245,16 @@ mc = common.program_montecarlo(csv_text, OIL, DISC, tuple(sorted(sel)),
 if mc is None:
     pt.empty_state("Nothing funded to simulate under the current constraints.")
 else:
+    # SPE exceedance labels (suite convention): P90 = downside low case, P10 =
+    # upside high case. Display + dict-key relabel only — percentile math untouched.
     pt.kpi_row([
-        {"label": "P10 NPV (Downside)", "value": f"${mc['p10']/1e6:,.0f}MM"},
+        {"label": "P90 NPV (Downside)", "value": f"${mc['p90']/1e6:,.0f}MM",
+         "help": "SPE exceedance convention: P90 = the low case, exceeded in 90% "
+                 "of trials (the distribution's 10th percentile)."},
         {"label": "P50 NPV (Median)", "value": f"${mc['p50']/1e6:,.0f}MM"},
-        {"label": "P90 NPV (Upside)", "value": f"${mc['p90']/1e6:,.0f}MM"},
+        {"label": "P10 NPV (Upside)", "value": f"${mc['p10']/1e6:,.0f}MM",
+         "help": "SPE exceedance convention: P10 = the high case, exceeded in only "
+                 "10% of trials (the distribution's 90th percentile)."},
         {"label": "Mean NPV", "value": f"${mc['mean']/1e6:,.0f}MM"},
         {"label": "P(Program Loss)", "value": f"{mc['p_loss']*100:.0f}%",
          "help": "Share of trials where the whole funded program returns < $0."},
@@ -239,7 +267,7 @@ else:
     hist.update_layout(xaxis_title="program NPV ($MM)", yaxis_title="trials")
     st.plotly_chart(theme.style_fig(hist, height=300, legend=False), width="stretch")
     st.caption(f"Deterministic risked NPV (${program.risked_npv/1e6:,.1f}MM) sits near "
-               "the mean (correlation widens the spread, not the mean); the P10 is what "
+               "the mean (correlation widens the spread, not the mean); the P90 is what "
                f"price + correlated dry-hole risk (ρ={rho:.2f}) do to the downside. Raise "
                "ρ for a more conservative, single-basin underwrite.")
     theme.source_note(

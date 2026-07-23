@@ -117,12 +117,16 @@ if diag_up is not None:
     except (ValueError, json.JSONDecodeError) as exc:
         st.error(f"Diagnosis rejected: {exc}")
         st.stop()
-    ss["diag_preset"] = {k: getattr(diag, k) for k in (
+    common.set_diag_preset({k: getattr(diag, k) for k in (
         "well_id", "api_number", "field", "operator", "intervention",
         "primary_diagnosis", "incremental_rate_bopd",
-        "expected_uplift_decline_per_yr", "requested_by")}
+        "expected_uplift_decline_per_yr", "requested_by")})
     st.success(f"Validated {diag.well_id} ({diag.intervention}) — preloaded into "
                "the Draft AFE page.")
+    common.next_step("views/authorize_draft.py",
+                     "→ Turn it into an AFE (Draft AFE)",
+                     help="The validated diagnosis is staged — the Draft AFE form "
+                          "opens pre-filled with it.")
 
 # 2) Backlog CSV
 st.markdown("**Backlog CSV → Program**")

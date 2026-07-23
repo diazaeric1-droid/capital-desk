@@ -24,7 +24,7 @@ pt.masthead("capital", "Variance",
             "Actual vs. AFE on closed-out jobs — where the money actually went.")
 n_live = len(ss.get("live_actuals", {}))
 pt.context_bar([
-    ("Deck", f"${OIL:.0f}/bbl · NRI {NRI:.0%} · {DISC:.1%} disc"),
+    ("Deck", common.deck()[3]),
     ("Data", f"Demo closed-out actuals (synthetic){f' + {n_live} executed live' if n_live else ''}"),
     ("Policy", f"Supplement above +{core.afe_variance.SUPPLEMENT_THRESHOLD_PCT:.0f}% overrun"),
 ])
@@ -65,16 +65,82 @@ if vs.worst_offender_category:
 if vs.unbudgeted_categories:
     st.warning("Unbudgeted actuals (no AFE line existed): "
                + ", ".join(vs.unbudgeted_categories))
-if vs.supplement_required_afes:
-    st.error("Supplemental AFE required (actuals exceed the AFE by more than "
-             f"{core.afe_variance.SUPPLEMENT_THRESHOLD_PCT:.0f}%): "
-             + ", ".join(vs.supplement_required_afes))
-
 # Per-line variance frame (one row per AFE × category), plus a per-category roll-up.
 merged = afe_df.merge(actuals_df, on=["afe_number", "category"], how="outer").fillna(0)
 merged["variance_usd"] = merged["actual_usd"] - merged["line_total_usd"]
 merged["variance_pct"] = (merged["variance_usd"]
                           / merged["line_total_usd"].replace(0, pd.NA)) * 100.0
+
+# Per-AFE rollup — the committee's first question is "which JOB overran and by
+# how much", so answer it directly instead of leaving the line table to be
+# mentally aggregated. Reuses `merged`; no new math.
+by_afe = (merged.groupby("afe_number", as_index=False)
+          .agg(afe_budget=("line_total_usd", "sum"), actual=("actual_usd", "sum")))
+by_afe["variance_usd"] = by_afe["actual"] - by_afe["afe_budget"]
+by_afe["variance_pct"] = (by_afe["variance_usd"]
+                          / by_afe["afe_budget"].replace(0, pd.NA)) * 100.0
+by_afe = by_afe.sort_values("variance_usd", ascending=False).reset_index(drop=True)
+
+if vs.supplement_required_afes:
+    st.error("Supplemental AFE required (actuals exceed the AFE by more than "
+             f"{core.afe_variance.SUPPLEMENT_THRESHOLD_PCT:.0f}%): "
+             + ", ".join(vs.supplement_required_afes))
+    st.caption("**The action:** draft a supplemental AFE for the overrun amount — "
+               "same well and intervention as the original, incremental cost only "
+               "(policy covers the overrun, not a re-authorization of the full job).")
+    # Worst offender by $ among the flagged AFEs; when the live tracker knows its
+    # well + intervention, stage them into the Draft-AFE session preset (the
+    # sanctioned handoff — never a widget-owned key write from a page body).
+    _flagged = by_afe[by_afe["afe_number"].isin(vs.supplement_required_afes)]
+    if len(_flagged):
+        _worst = _flagged.iloc[0]
+        _pipe = core.pipeline_df()
+        _match = _pipe[_pipe["afe_number"] == _worst["afe_number"]] if len(_pipe) else _pipe
+        s1, s2 = st.columns([1.2, 2])
+        if len(_match):
+            _mr = _match.iloc[0]
+            if s1.button(f"Pre-fill Draft AFE for {_worst['afe_number']}",
+                         key="v_prefill_supplement",
+                         help=f"Stages {_mr['well_id']} · "
+                              f"{str(_mr['intervention']).replace('_', ' ')} into the "
+                              "Draft AFE form; set the cost lines to the overrun "
+                              f"(${_worst['variance_usd']:,.0f})."):
+                common.set_diag_preset({"well_id": str(_mr["well_id"]),
+                                        "intervention": str(_mr["intervention"])})
+                st.success(f"{_mr['well_id']} staged — open Draft AFE.")
+        else:
+            s1.caption(f"{_worst['afe_number']} is a prior-year demo close-out (not "
+                       "in the live tracker) — no well to pre-fill.")
+        with s2:
+            common.next_step(
+                "views/authorize_draft.py",
+                "→ Draft the supplemental (Draft AFE)",
+                help="Draft the supplemental on the Draft AFE page, then submit it "
+                     "to the Pipeline Board like any other AFE.")
+
+pt.section("Variance by AFE", "Which JOB overran and by how much — budget vs. "
+           "actual per AFE, worst first; the policy pill flags the supplement line.")
+_sup_afes = set(vs.supplement_required_afes)
+_afe_disp = by_afe.rename(columns={
+    "afe_number": "AFE", "afe_budget": "AFE Budget $", "actual": "Actual $",
+    "variance_usd": "Variance $", "variance_pct": "Variance %"})
+_afe_disp["Policy"] = [
+    (f"SUPPLEMENT REQUIRED (> +{core.afe_variance.SUPPLEMENT_THRESHOLD_PCT:.0f}%)"
+     if a in _sup_afes else "—") for a in _afe_disp["AFE"]]
+st.dataframe(
+    _afe_disp, width="stretch", hide_index=True,
+    column_config={
+        **{c: st.column_config.NumberColumn(format="$%,.0f")
+           for c in ("AFE Budget $", "Actual $", "Variance $")},
+        "Variance %": st.column_config.NumberColumn(
+            format="%+.1f%%", help="Actual vs. total AFE budget for the job; the "
+            f"supplement policy trips above +"
+            f"{core.afe_variance.SUPPLEMENT_THRESHOLD_PCT:.0f}%."),
+        "Policy": st.column_config.TextColumn(
+            help="Supplemental-AFE policy: actuals more than "
+                 f"{core.afe_variance.SUPPLEMENT_THRESHOLD_PCT:.0f}% over the AFE "
+                 "require a supplemental authorization."),
+    })
 
 by_cat = (merged.groupby("category", as_index=False)
           .agg(afe_budget=("line_total_usd", "sum"), actual=("actual_usd", "sum")))

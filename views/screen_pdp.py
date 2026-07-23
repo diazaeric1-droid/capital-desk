@@ -59,7 +59,7 @@ with st.expander("Bring your own monthly production (CSV)"):
     st.caption("Required columns: `well_id`, `month` (YYYY-MM), `oil_bbl`; "
                "optional `days` (producing days — improves the rate basis). "
                "Nothing is stored server-side.")
-    st.download_button("Download template CSV", data=pdp.template_csv(),
+    st.download_button("Download template (CSV)", data=pdp.template_csv(),
                        file_name="pdp_monthly_template.csv", mime="text/csv")
     up = st.file_uploader("Monthly production CSV", type=["csv"], key="pdp_upload_page")
     if up is not None:
@@ -90,25 +90,29 @@ else:
         "Colorado ECMC (formerly COGCC) public records — DJ Basin horizontals, Weld County.")
 
 SEV = common.severance_frac()      # from the global deck — same tax the AFE charges
+# Exact typed inputs (round-1 PE feedback: "exact typed inputs, not sliders" — a
+# $12.75 LOE must be enterable). Same bounds and defaults as the former sliders.
 a1, a2, a3, a4, a5 = st.columns(5)
-loe = a1.slider("LOE ($/bbl)", 4.0, 30.0, 12.0, 0.5,
-                help="Lease operating expense per barrel of oil.")
-gas_price = a2.slider("Gas price ($/mcf)", 0.0, 8.0, 3.00, 0.25,
-                      help="Realized gas price. Gas rides each well's producing GOR "
-                           "off the oil decline; set 0 to value oil only.")
-gas_opex = a3.slider("Gas gathering ($/mcf)", 0.0, 2.0, 0.50, 0.05,
-                     help="Gathering / compression / processing cost deducted from "
-                          "gas revenue, so gas PV isn't an un-costed upper bound.")
-econ_limit = a4.slider("Economic limit (bopd)", 1.0, 10.0,
-                       pdp.DEFAULT_ECON_LIMIT_BOPD, 0.5,
-                       help="Forecast stops at this rate or 360 forecast months, "
-                            "whichever comes first.")
-dmin_pct = a5.slider("Terminal decline (%/yr)", 0.0, 15.0,
-                     pdp.DEFAULT_DMIN_ANNUAL * 100.0, 1.0,
-                     help="Modified-hyperbolic Dmin: the forecast switches from "
-                          "hyperbolic to exponential once its decline reaches this, "
-                          "so high-b wells don't over-forecast EUR. Only binds on wells "
-                          "whose initial decline exceeds it. 0 = pure Arps.")
+loe = a1.number_input("LOE ($/bbl)", 4.0, 30.0, 12.0, 0.5,
+                      help="Lease operating expense per barrel of oil — deducted "
+                           "from oil revenue in every well's PV10.")
+gas_price = a2.number_input("Gas price ($/Mscf)", 0.0, 8.0, 3.00, 0.25,
+                            help="Realized gas price. Gas rides each well's producing "
+                                 "GOR off the oil decline; set 0 to value oil only.")
+gas_opex = a3.number_input("Gas gathering ($/Mscf)", 0.0, 2.0, 0.50, 0.05,
+                           help="Gathering / compression / processing cost deducted "
+                                "from gas revenue, so gas PV isn't an un-costed "
+                                "upper bound.")
+econ_limit = a4.number_input("Economic limit (BOPD)", 1.0, 10.0,
+                             pdp.DEFAULT_ECON_LIMIT_BOPD, 0.5,
+                             help="Forecast stops at this rate or 360 forecast "
+                                  "months, whichever comes first.")
+dmin_pct = a5.number_input("Terminal decline (%/yr)", 0.0, 15.0,
+                           pdp.DEFAULT_DMIN_ANNUAL * 100.0, 1.0,
+                           help="Modified-hyperbolic Dmin: the forecast switches from "
+                                "hyperbolic to exponential once its decline reaches this, "
+                                "so high-b wells don't over-forecast EUR. Only binds on wells "
+                                "whose initial decline exceeds it. 0 = pure Arps.")
 dmin = dmin_pct / 100.0
 st.caption(f"Severance + ad valorem of **{SEV:.1%}** comes from the global deck "
            "(sidebar) — the same drag the AFE net economics apply. Forecast uses a "
@@ -262,9 +266,18 @@ if skipped:
 # ---- per-well drill-down ---------------------------------------------------------
 pt.section("Well Drill-Down", "History, fit, and the forward forecast.")
 well_ids = list(table["well_id"])
-if ss.get("well_id") not in well_ids:
-    ss["well_id"] = well_ids[0]
-st.selectbox("Well", well_ids, key="well_id")
+# index= pattern, NOT a pre-widget ss["well_id"] write above a selectbox keyed on
+# the same name: writing a widget-owned key from the page body is the exact bug
+# class that crashed Operations Center in production, and AppTest cannot catch it
+# (it can't fire selection events). The selectbox is UNKEYED; "well_id" stays a
+# plain session variable updated from the widget's return value.
+_idx = well_ids.index(ss["well_id"]) if ss.get("well_id") in well_ids else 0
+sel_well = st.selectbox("Well", well_ids, index=_idx,
+                        format_func=common.well_label,
+                        help="well_0NN ids are shared suite-wide — the same well "
+                             "resolves in Operations Center and Engineering "
+                             "Workbench (and in Draft AFE's trend panel here).")
+ss["well_id"] = sel_well
 
 tidy = common.pdp_tidy(csv_text)
 g = tidy[tidy["well_id"] == ss["well_id"]]
@@ -315,5 +328,22 @@ theme.source_note(
     f"{fit.n_points} months). The forecast integrates FORWARD from the last "
     "history month — integrating from t=0 would re-count produced barrels and "
     "overstate remaining EUR ~2–3x.")
+
+# Screen → Authorize handoff: the natural next step after finding a well worth
+# working is drafting the AFE — without re-typing a well id the app already
+# knows. The id is staged via the sanctioned session-preset (never a direct
+# widget-owned-key write); Draft AFE's find_well_production resolves it.
+h1, h2 = st.columns([1.2, 2])
+if h1.button("Draft an AFE for this well", key="pdp_to_draft",
+             help=f"Stages {common.well_label(sel_well)} into the Draft AFE form — "
+                  "its production history auto-loads in the Well Trend panel."):
+    common.set_diag_preset({"well_id": str(sel_well)})
+    st.success(f"{common.well_label(sel_well)} staged — open Draft AFE.")
+with h2:
+    common.next_step(
+        "views/authorize_draft.py",
+        "→ Build the AFE for this well (Draft AFE)",
+        help="Click 'Draft an AFE for this well' first to pre-fill the form with "
+             "this well id; the trend panel there charts the same history.")
 
 theme.references(["arps", "prms", "npv"])

@@ -1,0 +1,11 @@
+{
+  "well_id": "well_017",
+  "api_number": "42-217-30017",
+  "field": "Delaware Basin — Reeves Co., TX",
+  "operator": "Synthetic Operator LLC",
+  "intervention": "esp_swap",
+  "primary_diagnosis": "ESP-lifted well (Reeves 17H, Wolfcamp A, 7,786 ft lateral) showing classic end-of-run signature: motor current unbalanced and trending up, vibration alarms over the last three weeks, and drawdown lost versus offset performance. Recommend pulling the unit and swapping to a right-sized ESP staged for the current inflow — deferring risks an off-bottom failure and a fishing job.",
+  "incremental_rate_bopd": 150,
+  "expected_uplift_decline_per_yr": 0.6,
+  "requested_by": "Eric Diaz, Staff Production Engineer"
+}
